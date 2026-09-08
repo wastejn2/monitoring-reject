@@ -627,11 +627,18 @@ tbody tr:hover { background: var(--surface-soft); }
   flex-shrink: 0;
 }
 
-/* Fades out/in when the fullscreen auto-cycle swaps to the next Plant, so
-   the switch reads as a transition instead of a jump-cut. Duration here
-   must match TV_FADE_MS in js/tv.js. */
-.tv-board-body { transition: opacity 0.32s var(--ease); opacity: 1; }
-.tv-board-body.tv-fading { opacity: 0; }
+/* PowerPoint-style push when the fullscreen auto-cycle swaps to the next
+   Plant: the board slides out to the left, jumps instantly (no transition)
+   to a staging position off-screen to the right while the next Plant's
+   data is swapped in, then slides back into place. Durations here must
+   match TV_SLIDE_MS in js/tv.js. */
+.tv-board-body {
+  transition: transform 0.38s var(--ease), opacity 0.38s var(--ease);
+  transform: translateX(0);
+  opacity: 1;
+}
+.tv-board-body.tv-slide-out { transform: translateX(-70px); opacity: 0; }
+.tv-board-body.tv-slide-prep { transition: none; transform: translateX(70px); opacity: 0; }
 
 /* Left column (bar chart on top, rank strip below it) sits next to the
    trend stack, which spans the FULL height of both stacked on the left —
