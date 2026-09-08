@@ -1,196 +1,266 @@
 /**
- * MONITORING REJECT — Auth: password hashing, HMAC tokens, account actions
+ * MONITORING REJECT — login, register, logout, and the admin
+ * "Kelola Akun" (account approval) page.
  */
 
-function sha256Hex_(input) {
-  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, input, Utilities.Charset.UTF_8);
-  return raw
-    .map(function (b) {
-      var v = (b < 0 ? b + 256 : b).toString(16);
-      return v.length === 1 ? '0' + v : v;
-    })
-    .join('');
-}
+const AuthUI = {
+  loginCard: null,
+  registerCard: null,
 
-// Salted + peppered + stretched hash. Not bcrypt, but a large step up from
-// plain SHA-256, and keeps the backend dependency-free (Apps Script has no
-// native bcrypt/scrypt).
-function hashPassword_(password, salt) {
-  var pepper = getScriptProp_('HMAC_SECRET') || 'fallback-pepper';
-  var value = salt + ':' + password + ':' + pepper;
-  for (var i = 0; i < 2000; i++) {
-    value = sha256Hex_(value + i);
-  }
-  return value;
-}
+  init() {
+    this.loginCard = document.getElementById('login-card');
+    this.registerCard = document.getElementById('register-card');
 
-function createToken_(username, role) {
-  var payload = { u: username, r: role, exp: Date.now() + 12 * 3600 * 1000 };
-  var payloadStr = Utilities.base64EncodeWebSafe(JSON.stringify(payload));
-  var sig = Utilities.base64EncodeWebSafe(
-    Utilities.computeHmacSha256Signature(payloadStr, getScriptProp_('HMAC_SECRET'))
-  );
-  return payloadStr + '.' + sig;
-}
+    document.getElementById('btn-show-register').addEventListener('click', () => this.showRegister());
+    document.getElementById('btn-show-login').addEventListener('click', () => this.showLogin());
 
-function verifyToken_(token) {
-  if (!token || typeof token !== 'string') return null;
-  var parts = token.split('.');
-  if (parts.length !== 2) return null;
-  var payloadStr = parts[0];
-  var sig = parts[1];
-  var expectedSig = Utilities.base64EncodeWebSafe(
-    Utilities.computeHmacSha256Signature(payloadStr, getScriptProp_('HMAC_SECRET'))
-  );
-  if (sig !== expectedSig) return null;
-  var payload;
-  try {
-    payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(payloadStr)).getDataAsString());
-  } catch (e) {
-    return null;
-  }
-  if (!payload || !payload.exp || Date.now() > payload.exp) return null;
-  return payload;
-}
+    document.getElementById('form-login').addEventListener('submit', (e) => this.handleLogin(e));
+    document.getElementById('form-register').addEventListener('submit', (e) => this.handleRegister(e));
 
-function requireAuth_(p) {
-  var payload = verifyToken_(p.token);
-  if (!payload) throw new Error('unauthorized');
-  return payload;
-}
+    document.getElementById('btn-logout').addEventListener('click', () => this.handleLogout());
+    document.getElementById('btn-logout-drawer').addEventListener('click', () => this.handleLogout());
 
-function requireAdmin_(p) {
-  var payload = requireAuth_(p);
-  if (payload.r !== 'admin') throw new Error('forbidden_not_admin');
-  return payload;
-}
-
-function actionRegister_(p) {
-  var username = normalizeUsername_(p.username);
-  var password = p.password || '';
-  if (!username || username.length < 3) return { ok: false, error: 'invalid_username' };
-  if (!password || password.length < 6) return { ok: false, error: 'password_too_short' };
-
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).toLowerCase() === username) {
-      return { ok: false, error: 'username_taken' };
-    }
-  }
-  var salt = Utilities.getUuid();
-  var hash = hashPassword_(password, salt);
-  sheet.appendRow([username, salt, hash, 'user', 'pending', new Date(), '', '']);
-  return { ok: true, message: 'registered_pending' };
-}
-
-function actionLogin_(p) {
-  var username = normalizeUsername_(p.username);
-  var password = p.password || '';
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    var row = data[i];
-    if (String(row[0]).toLowerCase() === username) {
-      var salt = row[1];
-      var hash = row[2];
-      var role = row[3];
-      var status = row[4];
-      var computed = hashPassword_(password, salt);
-      if (computed !== hash) return { ok: false, error: 'invalid_credentials' };
-      if (status === 'pending') return { ok: false, error: 'account_pending' };
-      if (status === 'rejected') return { ok: false, error: 'account_rejected' };
-      var token = createToken_(row[0], role);
-      return { ok: true, token: token, username: row[0], role: role };
-    }
-  }
-  return { ok: false, error: 'invalid_credentials' };
-}
-
-function actionListPendingUsers_(p) {
-  requireAdmin_(p);
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  var list = [];
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][4] === 'pending') {
-      list.push({ username: data[i][0], createdAt: data[i][5] instanceof Date ? formatDate_(data[i][5]) : String(data[i][5]) });
-    }
-  }
-  return { ok: true, users: list };
-}
-
-function actionListUsers_(p) {
-  requireAdmin_(p);
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  var list = [];
-  for (var i = 1; i < data.length; i++) {
-    var r = data[i];
-    list.push({
-      username: r[0],
-      role: r[3],
-      status: r[4],
-      createdAt: r[5] instanceof Date ? formatDate_(r[5]) : String(r[5]),
-      approvedBy: r[6],
-      approvedAt: r[7] instanceof Date ? formatDate_(r[7]) : String(r[7])
+    document.getElementById('current-username').addEventListener('click', () => this.openChangePassword());
+    document.getElementById('btn-cp-cancel').addEventListener('click', () => this.closeChangePassword());
+    document.getElementById('modal-backdrop').addEventListener('click', () => this.closeChangePassword());
+    document.getElementById('form-change-password').addEventListener('submit', (e) => this.handleChangePassword(e));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.closeChangePassword();
     });
+  },
+
+  openChangePassword() {
+    document.getElementById('form-change-password').reset();
+    hideMessage(document.getElementById('cp-error'));
+    hideMessage(document.getElementById('cp-success'));
+    document.getElementById('modal-backdrop').hidden = false;
+    document.getElementById('modal-change-password').hidden = false;
+  },
+  closeChangePassword() {
+    document.getElementById('modal-backdrop').hidden = true;
+    document.getElementById('modal-change-password').hidden = true;
+  },
+
+  async handleChangePassword(e) {
+    e.preventDefault();
+    const errorEl = document.getElementById('cp-error');
+    const successEl = document.getElementById('cp-success');
+    hideMessage(errorEl);
+    hideMessage(successEl);
+
+    const oldPassword = document.getElementById('cp-old').value;
+    const newPassword = document.getElementById('cp-new').value;
+    const newPassword2 = document.getElementById('cp-new2').value;
+
+    if (newPassword.length < 6) {
+      showMessage(errorEl, 'Password baru minimal 6 karakter.', 'error');
+      return;
+    }
+    if (newPassword !== newPassword2) {
+      showMessage(errorEl, 'Konfirmasi password baru tidak cocok.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-cp-submit');
+    setButtonLoading(btn, true);
+    const res = await Api.changePassword(oldPassword, newPassword);
+    setButtonLoading(btn, false);
+
+    if (!res.ok) {
+      const map = {
+        invalid_old_password: 'Password lama salah.',
+        password_too_short: 'Password baru minimal 6 karakter.'
+      };
+      showMessage(errorEl, map[res.error] || 'Gagal mengganti password.', 'error');
+      return;
+    }
+
+    showMessage(successEl, 'Password berhasil diganti.', 'success');
+    toast('Password berhasil diganti.', 'success');
+    setTimeout(() => this.closeChangePassword(), 900);
+  },
+
+  showRegister() {
+    this.loginCard.hidden = true;
+    this.registerCard.hidden = false;
+  },
+  showLogin() {
+    this.registerCard.hidden = true;
+    this.loginCard.hidden = false;
+  },
+
+  async handleLogin(e) {
+    e.preventDefault();
+    const errorEl = document.getElementById('login-error');
+    const successEl = document.getElementById('login-success');
+    hideMessage(errorEl);
+    hideMessage(successEl);
+
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    if (!username || !password) {
+      showMessage(errorEl, 'Username dan password wajib diisi.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-login-submit');
+    setButtonLoading(btn, true);
+    const res = await Api.login(username, password);
+    setButtonLoading(btn, false);
+
+    if (!res.ok) {
+      showMessage(errorEl, mapAuthError(res.error), 'error');
+      return;
+    }
+
+    Session.setToken(res.token);
+    Session.setUser({ username: res.username, role: res.role });
+    App.enterApp();
+  },
+
+  async handleRegister(e) {
+    e.preventDefault();
+    const errorEl = document.getElementById('register-error');
+    const successEl = document.getElementById('register-success');
+    hideMessage(errorEl);
+    hideMessage(successEl);
+
+    const username = document.getElementById('register-username').value.trim();
+    const password = document.getElementById('register-password').value;
+    const password2 = document.getElementById('register-password2').value;
+
+    if (username.length < 3) {
+      showMessage(errorEl, 'Username minimal 3 karakter.', 'error');
+      return;
+    }
+    if (password.length < 6) {
+      showMessage(errorEl, 'Password minimal 6 karakter.', 'error');
+      return;
+    }
+    if (password !== password2) {
+      showMessage(errorEl, 'Konfirmasi password tidak cocok.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-register-submit');
+    setButtonLoading(btn, true);
+    const res = await Api.register(username, password);
+    setButtonLoading(btn, false);
+
+    if (!res.ok) {
+      showMessage(errorEl, mapAuthError(res.error), 'error');
+      return;
+    }
+
+    showMessage(successEl, 'Akun berhasil dibuat. Tunggu persetujuan admin sebelum login.', 'success');
+    document.getElementById('form-register').reset();
+  },
+
+  handleLogout() {
+    Session.clearAll();
+    App.showAuth();
+    toast('Berhasil keluar.', 'info');
   }
-  return { ok: true, users: list };
+};
+
+function mapAuthError(code) {
+  const map = {
+    invalid_username: 'Username tidak valid.',
+    password_too_short: 'Password minimal 6 karakter.',
+    username_taken: 'Username sudah digunakan.',
+    invalid_credentials: 'Username atau password salah.',
+    account_pending: 'Akun masih menunggu persetujuan admin.',
+    account_rejected: 'Akun ini ditolak. Hubungi admin.',
+    network_error: 'Tidak bisa terhubung ke server. Periksa koneksi internet.',
+    bad_response: 'Respons server tidak valid.'
+  };
+  return map[code] || 'Terjadi kesalahan. Coba lagi.';
 }
 
-function actionApproveUser_(p) {
-  var admin = requireAdmin_(p);
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  var username = normalizeUsername_(p.username);
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).toLowerCase() === username) {
-      sheet.getRange(i + 1, 5).setValue('approved');
-      sheet.getRange(i + 1, 7).setValue(admin.u);
-      sheet.getRange(i + 1, 8).setValue(new Date());
-      return { ok: true };
-    }
-  }
-  return { ok: false, error: 'user_not_found' };
-}
+// ---------- Accounts page (admin only) ----------
+const AccountsPage = {
+  async load() {
+    const pendingList = document.getElementById('pending-list');
+    const emptyPending = document.getElementById('empty-pending');
+    const allList = document.getElementById('all-users-list');
 
-function actionChangePassword_(p) {
-  var user = requireAuth_(p);
-  var oldPassword = p.oldPassword || '';
-  var newPassword = p.newPassword || '';
-  if (!newPassword || newPassword.length < 6) return { ok: false, error: 'password_too_short' };
+    pendingList.innerHTML = '';
+    allList.innerHTML = '';
 
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  var username = normalizeUsername_(user.u);
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).toLowerCase() === username) {
-      var salt = data[i][1];
-      var hash = data[i][2];
-      if (hashPassword_(oldPassword, salt) !== hash) return { ok: false, error: 'invalid_old_password' };
-      var newSalt = Utilities.getUuid();
-      var newHash = hashPassword_(newPassword, newSalt);
-      sheet.getRange(i + 1, 2).setValue(newSalt);
-      sheet.getRange(i + 1, 3).setValue(newHash);
-      return { ok: true };
-    }
-  }
-  return { ok: false, error: 'user_not_found' };
-}
+    const [pendingRes, allRes] = await Promise.all([Api.listPendingUsers(), Api.listUsers()]);
 
-function actionRejectUser_(p) {
-  var admin = requireAdmin_(p);
-  var sheet = getOrCreateSheet_(USERS_SHEET, USERS_HEADERS);
-  var data = sheet.getDataRange().getValues();
-  var username = normalizeUsername_(p.username);
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).toLowerCase() === username) {
-      sheet.getRange(i + 1, 5).setValue('rejected');
-      sheet.getRange(i + 1, 7).setValue(admin.u);
-      sheet.getRange(i + 1, 8).setValue(new Date());
-      return { ok: true };
+    if (pendingRes.ok) {
+      if (pendingRes.users.length === 0) {
+        emptyPending.hidden = false;
+      } else {
+        emptyPending.hidden = true;
+        pendingRes.users.forEach((u) => pendingList.appendChild(this.renderPendingRow(u)));
+      }
     }
+
+    if (allRes.ok) {
+      allRes.users.forEach((u) => allList.appendChild(this.renderUserRow(u)));
+    }
+  },
+
+  renderPendingRow(u) {
+    const row = document.createElement('div');
+    row.className = 'account-row';
+    row.innerHTML = `
+      <div>
+        <div class="acc-name">${escapeHtml(u.username)}</div>
+        <div class="acc-meta">Daftar: ${escapeHtml(u.createdAt || '-')}</div>
+      </div>
+      <div class="acc-actions">
+        <button class="btn-approve" data-user="${escapeHtml(u.username)}">Setujui</button>
+        <button class="btn-deny" data-user="${escapeHtml(u.username)}">Tolak</button>
+      </div>
+    `;
+    row.querySelector('.btn-approve').addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      const res = await Api.approveUser(u.username);
+      if (res.ok) {
+        toast(`Akun "${u.username}" disetujui.`, 'success');
+        AccountsPage.load();
+      } else {
+        toast('Gagal menyetujui akun.', 'error');
+        e.currentTarget.disabled = false;
+      }
+    });
+    row.querySelector('.btn-deny').addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      const res = await Api.rejectUser(u.username);
+      if (res.ok) {
+        toast(`Akun "${u.username}" ditolak.`, 'info');
+        AccountsPage.load();
+      } else {
+        toast('Gagal menolak akun.', 'error');
+        e.currentTarget.disabled = false;
+      }
+    });
+    return row;
+  },
+
+  renderUserRow(u) {
+    const row = document.createElement('div');
+    row.className = 'account-row';
+    const statusBadge = `<span class="badge badge-${u.status}">${u.status}</span>`;
+    const roleBadge = u.role === 'admin' ? '<span class="badge badge-admin">admin</span>' : '';
+    row.innerHTML = `
+      <div>
+        <div class="acc-name">${escapeHtml(u.username)} ${roleBadge}</div>
+        <div class="acc-meta">Dibuat: ${escapeHtml(u.createdAt || '-')}</div>
+      </div>
+      ${statusBadge}
+    `;
+    return row;
   }
-  return { ok: false, error: 'user_not_found' };
+};
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
