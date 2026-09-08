@@ -123,16 +123,12 @@ button, input, select {
   height: 56px;
   margin: 0 auto 14px;
   border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 20px;
-  color: #fff;
+  display: block;
+  object-fit: cover;
   background: linear-gradient(135deg, var(--maroon-700), var(--red-500));
   box-shadow: var(--shadow-md);
 }
-.brand-logo.small { width: 38px; height: 38px; font-size: 14px; border-radius: 12px; margin: 0; }
+.brand-logo.small { width: 38px; height: 38px; border-radius: 12px; margin: 0; }
 
 .brand h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; color: var(--maroon-900); }
 .brand-sub { margin: 0; color: var(--text-muted); font-size: 13.5px; }
@@ -232,7 +228,7 @@ button, input, select {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px 18px;
 }
 .form-grid.two-col { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
@@ -444,7 +440,7 @@ button, input, select {
 }
 .card-title-row { display: flex; align-items: center; justify-content: space-between; }
 
-.form-card { max-width: 760px; margin-left: auto; margin-right: auto; }
+.form-card { max-width: 880px; margin-left: auto; margin-right: auto; }
 
 /* =========================================================
    MULTISELECT (checkbox dropdown, not a native <select multiple>)
@@ -524,7 +520,7 @@ button, input, select {
 .filter-card { padding: 18px 22px; }
 .filter-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px 18px;
   align-items: end;
 }
@@ -573,6 +569,94 @@ tbody tr:hover { background: var(--surface-soft); }
   font-size: 13.5px;
   padding: 30px 10px;
 }
+
+/* =========================================================
+   TV MONITORING BOARD
+   ========================================================= */
+
+.tv-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 22px;
+  padding: 16px 22px;
+}
+.tv-plant-field { margin-bottom: 0; min-width: 220px; }
+.tv-plant-field select {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--maroon-900);
+  background: var(--surface);
+}
+.tv-meta { margin-left: auto; text-align: right; }
+.tv-meta + .tv-meta { margin-left: 28px; }
+.tv-meta-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.tv-meta-value { font-size: 17px; font-weight: 800; color: var(--maroon-900); font-variant-numeric: tabular-nums; }
+
+.tv-panel-bar .tv-bar-wrap { height: 380px; }
+
+.tv-grid-lower {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 18px;
+  align-items: start;
+}
+
+/* ---- Top Rank list ---- */
+.tv-rank-list { display: flex; flex-direction: column; gap: 10px; }
+.tv-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  transition: transform 0.18s var(--ease);
+}
+.tv-rank-row:hover { transform: translateX(2px); }
+.tv-rank-pos {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--maroon-700);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+}
+.tv-rank-1 .tv-rank-pos { background: linear-gradient(135deg, #f2c14e, #d8b370); color: #3a0510; }
+.tv-rank-2 .tv-rank-pos { background: linear-gradient(135deg, #cfd4da, #a7adb5); color: #2a1418; }
+.tv-rank-3 .tv-rank-pos { background: linear-gradient(135deg, #d8935b, #b06a3a); color: #fff; }
+.tv-rank-info { flex: 1; min-width: 0; }
+.tv-rank-line { font-weight: 700; color: var(--text); font-size: 14.5px; }
+.tv-rank-total { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.tv-rank-avg { text-align: right; flex-shrink: 0; }
+.tv-rank-avg-value { font-size: 19px; font-weight: 800; color: var(--red-500); font-variant-numeric: tabular-nums; }
+.tv-rank-avg-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* ---- 7-day trend mini charts ---- */
+.tv-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+.tv-trend-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px 6px;
+  background: var(--surface-soft);
+}
+.tv-trend-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.tv-trend-item-line { font-size: 12.5px; font-weight: 700; color: var(--maroon-900); }
+.tv-trend-item-total { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+.tv-trend-item-chart { position: relative; height: 78px; }
 
 /* =========================================================
    ACCOUNTS PAGE
@@ -660,6 +744,9 @@ tbody tr:hover { background: var(--surface-soft); }
   .filter-actions { grid-column: span 2; }
   .chart-grid { grid-template-columns: 1fr; }
   .kpi-row { grid-template-columns: 1fr; }
+  .tv-grid-lower { grid-template-columns: 1fr; }
+  .tv-meta { margin-left: 0; text-align: left; }
+  .tv-meta + .tv-meta { margin-left: 0; }
 }
 
 @media (max-width: 520px) {
