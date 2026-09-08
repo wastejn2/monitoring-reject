@@ -24,6 +24,14 @@ function tvWait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Explicit HH:mm:ss with colons — toLocaleTimeString('id-ID') renders with
+// dots (e.g. "18.58.59"), which reads as an odd number rather than a clock
+// at a glance on a TV board.
+function tvFormatClock(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 // Draws the value on top of each bar, and a small S1/S2/S3 tag near the
 // bottom of the bar itself — replaces the old top-of-chart color legend,
 // since the tag on the bar already says which shift it is.
@@ -182,7 +190,7 @@ const TvBoard = {
       return;
     }
 
-    this.els.lastUpdated.textContent = new Date().toLocaleTimeString('id-ID');
+    this.els.lastUpdated.textContent = tvFormatClock(new Date());
 
     this.renderBar(res.rows, plant, h1);
     this.renderTrendAndRank(res.rows, plant, dates);
@@ -220,7 +228,7 @@ const TvBoard = {
       backgroundColor: shiftColors[shiftKey],
       borderRadius: 5,
       maxBarThickness: 50,
-      barPercentage: 0.95,
+      barPercentage: 0.98,
       categoryPercentage: 0.82
     }));
 
