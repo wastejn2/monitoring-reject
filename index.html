@@ -36,7 +36,10 @@
         </label>
         <label class="field">
           <span>Password</span>
-          <input type="password" id="login-password" autocomplete="current-password" required />
+          <div class="password-field">
+            <input type="password" id="login-password" autocomplete="current-password" required />
+            <button type="button" class="btn-toggle-password" data-target="login-password" tabindex="-1">Lihat</button>
+          </div>
         </label>
         <div class="form-message form-error" id="login-error" hidden></div>
         <div class="form-message form-success" id="login-success" hidden></div>
@@ -61,11 +64,17 @@
         </label>
         <label class="field">
           <span>Password</span>
-          <input type="password" id="register-password" autocomplete="new-password" minlength="6" required />
+          <div class="password-field">
+            <input type="password" id="register-password" autocomplete="new-password" minlength="6" required />
+            <button type="button" class="btn-toggle-password" data-target="register-password" tabindex="-1">Lihat</button>
+          </div>
         </label>
         <label class="field">
           <span>Konfirmasi Password</span>
-          <input type="password" id="register-password2" autocomplete="new-password" minlength="6" required />
+          <div class="password-field">
+            <input type="password" id="register-password2" autocomplete="new-password" minlength="6" required />
+            <button type="button" class="btn-toggle-password" data-target="register-password2" tabindex="-1">Lihat</button>
+          </div>
         </label>
         <div class="form-message form-error" id="register-error" hidden></div>
         <div class="form-message form-success" id="register-success" hidden></div>
@@ -100,15 +109,24 @@
       <form id="form-change-password" novalidate>
         <label class="field">
           <span>Password Lama</span>
-          <input type="password" id="cp-old" autocomplete="current-password" required />
+          <div class="password-field">
+            <input type="password" id="cp-old" autocomplete="current-password" required />
+            <button type="button" class="btn-toggle-password" data-target="cp-old" tabindex="-1">Lihat</button>
+          </div>
         </label>
         <label class="field">
           <span>Password Baru</span>
-          <input type="password" id="cp-new" autocomplete="new-password" minlength="6" required />
+          <div class="password-field">
+            <input type="password" id="cp-new" autocomplete="new-password" minlength="6" required />
+            <button type="button" class="btn-toggle-password" data-target="cp-new" tabindex="-1">Lihat</button>
+          </div>
         </label>
         <label class="field">
           <span>Konfirmasi Password Baru</span>
-          <input type="password" id="cp-new2" autocomplete="new-password" minlength="6" required />
+          <div class="password-field">
+            <input type="password" id="cp-new2" autocomplete="new-password" minlength="6" required />
+            <button type="button" class="btn-toggle-password" data-target="cp-new2" tabindex="-1">Lihat</button>
+          </div>
         </label>
         <div class="form-message form-error" id="cp-error" hidden></div>
         <div class="form-message form-success" id="cp-success" hidden></div>
