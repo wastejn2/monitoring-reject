@@ -1,7 +1,7 @@
 // Bump this number whenever any cached file changes — that's the ONLY edit
 // usually needed here. It forces every client to fetch fresh files instead
 // of serving stale ones from cache.
-const APP_VERSION = 'v.1.5';
+const APP_VERSION = 'v1.8';
 const CACHE_NAME = `monitoring-reject-${APP_VERSION}`;
 
 const APP_SHELL = [
@@ -14,6 +14,7 @@ const APP_SHELL = [
   './js/auth.js',
   './js/input-form.js',
   './js/dashboard.js',
+  './js/tv.js',
   './js/app.js',
   './libs/chart.min.js',
   './icons/icon-192.png',
