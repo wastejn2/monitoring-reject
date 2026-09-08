@@ -56,6 +56,44 @@ function aggregateByLine(rows) {
   }));
 }
 
+// Same shape as aggregateByLine, but summed across every Line inside each
+// Plant — this is the "Per Plant" view of the comparison chart, where one
+// bar represents the combined total of all its Lines.
+function aggregateByPlant(rows) {
+  const map = new Map();
+  rows.forEach((r) => {
+    if (!map.has(r.plant)) map.set(r.plant, { plant: r.plant, output: 0, reject: 0 });
+    const entry = map.get(r.plant);
+    entry.output += Number(r.output) || 0;
+    entry.reject += Number(r.reject) || 0;
+  });
+  return Array.from(map.values()).map((e) => ({
+    ...e,
+    pct: e.output > 0 ? (e.reject / e.output) * 100 : 0
+  }));
+}
+
+// Draws the reject value on top of each bar in the comparison chart, in the
+// same "number above the bar" style the TV board already uses.
+const barValueLabelPlugin = {
+  id: 'barValueLabel',
+  afterDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    const meta = chart.getDatasetMeta(0);
+    const data = chart.data.datasets[0].data;
+    meta.data.forEach((bar, index) => {
+      const value = data[index];
+      if (value === undefined || value === null) return;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#3a0510';
+      ctx.font = '700 11.5px "Segoe UI", sans-serif';
+      ctx.fillText(formatNumberID(value, 1), bar.x, bar.y - 6);
+      ctx.restore();
+    });
+  }
+};
+
 function aggregateByDate(rows) {
   const map = new Map();
   rows.forEach((r) => {
@@ -75,6 +113,8 @@ const Dashboard = {
   barChart: null,
   trendChart: null,
   loaded: false,
+  barGroupBy: 'line', // 'line' | 'plant' — which grouping the comparison chart shows
+  lastRows: [],
 
   init() {
     this.els = {
@@ -86,12 +126,27 @@ const Dashboard = {
       kpiReject: document.getElementById('kpi-reject'),
       kpiPct: document.getElementById('kpi-pct'),
       barCanvas: document.getElementById('chart-bar'),
+      barTitle: document.getElementById('chart-bar-title'),
+      barHint: document.getElementById('chart-bar-hint'),
+      barGroupButtons: Array.from(document.querySelectorAll('#bar-groupby-toggle .seg-btn')),
       trendCanvas: document.getElementById('chart-trend'),
       emptyBar: document.getElementById('empty-bar'),
       emptyTrend: document.getElementById('empty-trend'),
       emptyTable: document.getElementById('empty-table'),
       tableBody: document.getElementById('table-detail-body')
     };
+
+    this.els.barGroupButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.group === this.barGroupBy) return;
+        this.barGroupBy = btn.dataset.group;
+        this.els.barGroupButtons.forEach((b) => b.classList.toggle('active', b === btn));
+        const isPlant = this.barGroupBy === 'plant';
+        this.els.barTitle.textContent = isPlant ? 'Perbandingan Reject per Plant' : 'Perbandingan Reject per Line';
+        this.els.barHint.hidden = !isPlant;
+        this.updateBarChart();
+      });
+    });
 
     this.els.end.value = isoDateDaysAgo(0);
     this.els.start.value = isoDateDaysAgo(13);
@@ -148,21 +203,35 @@ const Dashboard = {
     const byLine = aggregateByLine(rows).sort((a, b) => a.line.localeCompare(b.line));
     const byDate = aggregateByDate(rows);
 
-    this.renderBarChart(byLine);
+    this.lastRows = rows;
+    this.updateBarChart();
     this.renderTrendChart(byDate);
     this.renderTable(byLine);
   },
 
-  renderBarChart(byLine) {
-    this.els.emptyBar.hidden = byLine.length > 0;
-    if (!byLine.length) {
+  // Re-aggregates from the last fetched rows according to the current
+  // Per Line / Per Plant toggle and re-renders the comparison chart — no
+  // need to hit the server again, the raw rows already have everything.
+  updateBarChart() {
+    if (this.barGroupBy === 'plant') {
+      const byPlant = aggregateByPlant(this.lastRows).sort((a, b) => a.plant.localeCompare(b.plant));
+      this.renderBarChart(byPlant, 'plant');
+    } else {
+      const byLine = aggregateByLine(this.lastRows).sort((a, b) => a.line.localeCompare(b.line));
+      this.renderBarChart(byLine, 'line');
+    }
+  },
+
+  renderBarChart(items, labelKey) {
+    this.els.emptyBar.hidden = items.length > 0;
+    if (!items.length) {
       if (this.barChart) { this.barChart.destroy(); this.barChart = null; }
       return;
     }
-    const maxReject = Math.max(...byLine.map((e) => e.reject), 1);
-    const labels = byLine.map((e) => e.line);
-    const data = byLine.map((e) => Number(e.reject.toFixed(3)));
-    const colors = byLine.map((e) => colorForRatio(e.reject / maxReject));
+    const maxReject = Math.max(...items.map((e) => e.reject), 1);
+    const labels = items.map((e) => e[labelKey]);
+    const data = items.map((e) => Number(e.reject.toFixed(3)));
+    const colors = items.map((e) => colorForRatio(e.reject / maxReject));
 
     if (this.barChart) this.barChart.destroy();
     this.barChart = new Chart(this.els.barCanvas.getContext('2d'), {
@@ -181,6 +250,7 @@ const Dashboard = {
         responsive: true,
         maintainAspectRatio: false,
         animation: { duration: 500, easing: 'easeOutQuart' },
+        layout: { padding: { top: 22 } },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -196,7 +266,8 @@ const Dashboard = {
           x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10.5 } } },
           y: { grid: { color: '#f1e3e5' }, ticks: { callback: (v) => formatNumberID(v, 0) } }
         }
-      }
+      },
+      plugins: [barValueLabelPlugin]
     });
   },
 
