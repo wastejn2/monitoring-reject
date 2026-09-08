@@ -368,7 +368,10 @@ const TvBoard = {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 500, easing: 'easeOutQuart' },
+        // Off on purpose — the plant slide-transition already animates the
+        // switch; having the bars also grow in on every 30s auto-cycle (or
+        // any refresh) on top of that reads as sluggish/double-animated.
+        animation: false,
         layout: { padding: { top: 22 } },
         plugins: {
           legend: { display: false },
@@ -515,7 +518,8 @@ const TvBoard = {
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 350, easing: 'easeOutQuart' },
+            // Same reasoning as the bar chart above — no draw-in animation.
+            animation: false,
             plugins: {
               legend: { display: false },
               tooltip: {
