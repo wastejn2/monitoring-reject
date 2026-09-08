@@ -57,5 +57,8 @@ const Api = {
   setUserRole: (username, role) => apiCall('setUserRole', { username, role }),
   submitReject: (data) => apiCall('submitReject', data),
   getDashboardData: (filters) => apiCall('getDashboardData', filters),
+  listRawData: (filters) => apiCall('listRawData', filters),
+  updateRawData: (data) => apiCall('updateRawData', data),
+  deleteRawData: (id) => apiCall('deleteRawData', { id }),
   changePassword: (oldPassword, newPassword) => apiCall('changePassword', { oldPassword, newPassword })
 };
