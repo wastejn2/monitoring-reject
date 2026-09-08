@@ -122,6 +122,69 @@
       </form>
     </div>
 
+    <!-- Riwayat Data (admin-only): edit a raw row -->
+    <div id="modal-edit-history" class="modal-card modal-card-wide" hidden>
+      <h3 class="card-title">Edit Data Reject</h3>
+      <form id="form-edit-history" novalidate>
+        <input type="hidden" id="eh-id" />
+        <div class="form-grid">
+          <label class="field">
+            <span>Tanggal</span>
+            <input type="date" id="eh-tanggal" required />
+          </label>
+          <label class="field">
+            <span>Shift</span>
+            <select id="eh-shift" required>
+              <option value="1">Shift 1</option>
+              <option value="2">Shift 2</option>
+              <option value="3">Shift 3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Plant</span>
+            <select id="eh-plant" required>
+              <option value="1111 Waferflat">1111 Waferflat</option>
+              <option value="1111 Waferstick">1111 Waferstick</option>
+              <option value="1112">1112</option>
+              <option value="1113">1113</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Line</span>
+            <select id="eh-line" required></select>
+          </label>
+        </div>
+        <div class="form-grid two-col">
+          <label class="field">
+            <span>Output Produksi (Kg)</span>
+            <input type="number" id="eh-output" step="0.001" min="0" inputmode="decimal" required />
+          </label>
+          <label class="field">
+            <span>Total Reject (Kg)</span>
+            <input type="number" id="eh-reject" step="0.001" min="0" inputmode="decimal" required />
+          </label>
+        </div>
+        <div class="form-message form-error" id="eh-error" hidden></div>
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="btn-eh-cancel">Batal</button>
+          <button type="submit" class="btn-primary" id="btn-eh-submit">
+            <span class="btn-label">Simpan Perubahan</span>
+            <span class="btn-spinner" hidden></span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Riwayat Data (admin-only): confirm before permanently deleting a row -->
+    <div id="modal-confirm-delete" class="modal-card" hidden>
+      <h3 class="card-title">Hapus Data?</h3>
+      <p class="modal-text" id="cd-message">Data ini akan dihapus permanen dari Sheet dan tidak bisa dikembalikan.</p>
+      <div class="form-actions">
+        <button type="button" class="btn-ghost" id="btn-cd-cancel">Batal</button>
+        <button type="button" class="btn-danger" id="btn-cd-confirm">Ya, Hapus</button>
+      </div>
+    </div>
+
     <nav id="nav-drawer" class="nav-drawer" aria-hidden="true">
       <div class="nav-brand">
         <img class="brand-logo small" src="icons/icon-192.png" alt="Logo" />
@@ -141,6 +204,9 @@
       </button>
       <button class="nav-item" data-target="accounts" id="nav-accounts" hidden>
         <span class="nav-icon">👤</span> Kelola Akun
+      </button>
+      <button class="nav-item" data-target="history" id="nav-history" hidden>
+        <span class="nav-icon">🗂️</span> Riwayat Data
       </button>
       <div class="nav-spacer"></div>
       <button class="nav-item nav-logout" id="btn-logout-drawer">
@@ -359,6 +425,62 @@
         </div>
       </section>
 
+      <!-- ---------- PAGE: RIWAYAT DATA (admin only — view/edit/delete raw rows) ---------- -->
+      <section id="page-history" class="page">
+        <div class="card filter-card">
+          <div class="filter-row">
+            <label class="field">
+              <span>Periode Awal</span>
+              <input type="date" id="hist-filter-start" />
+            </label>
+            <label class="field">
+              <span>Periode Akhir</span>
+              <input type="date" id="hist-filter-end" />
+            </label>
+
+            <div class="field multiselect-field">
+              <span>Plant</span>
+              <div class="multiselect" id="hist-ms-plant" data-label="Semua Plant"></div>
+            </div>
+            <div class="field multiselect-field">
+              <span>Line</span>
+              <div class="multiselect" id="hist-ms-line" data-label="Semua Line"></div>
+            </div>
+
+            <div class="filter-actions">
+              <button class="btn-ghost" id="btn-hist-reset">Reset</button>
+              <button class="btn-primary" id="btn-hist-apply">
+                <span class="btn-label">Terapkan</span>
+                <span class="btn-spinner" hidden></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <h2 class="card-title">Data Mentah — <span id="hist-count">0</span> baris</h2>
+          <div class="table-wrap table-wrap-scroll">
+            <table id="table-history">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Shift</th>
+                  <th>Plant</th>
+                  <th>Line</th>
+                  <th>Output (Kg)</th>
+                  <th>Reject (Kg)</th>
+                  <th>Reject (%)</th>
+                  <th>Diinput Oleh</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="table-history-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="empty-history" hidden>Tidak ada data untuk filter ini.</div>
+        </div>
+      </section>
+
     </main>
   </div>
 
@@ -372,6 +494,7 @@
 <script src="js/input-form.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/tv.js"></script>
+<script src="js/history.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
