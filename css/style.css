@@ -580,7 +580,10 @@ button, input, select {
 .chart-wrap { position: relative; height: 300px; }
 
 .table-card .table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+/* min-width keeps the 5 columns from being squeezed unreadably thin on a
+   narrow phone — table-wrap's overflow-x then gives an actual horizontal
+   scrollbar instead of just clipping the last column off-screen. */
+table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 13.5px; }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 th { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 11.5px; letter-spacing: 0.03em; }
 tbody tr { transition: background 0.15s var(--ease); }
@@ -619,12 +622,20 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-meta-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .tv-meta-value { font-size: 17px; font-weight: 800; color: var(--maroon-900); font-variant-numeric: tabular-nums; }
 
-.tv-fullscreen-btn {
+.tv-fullscreen-btn, .tv-autorotate-btn {
   width: auto;
   padding: 10px 16px;
   font-size: 13px;
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* Independent of Fullscreen — some mobile browsers (iPhone Safari) don't
+   support requesting fullscreen on an arbitrary element at all, so this is
+   often the only way to get plant auto-rotation there. */
+.tv-autorotate-btn.active {
+  background: var(--maroon-700);
+  color: #fff;
+  border-color: var(--maroon-700);
 }
 
 /* PowerPoint-style push when the fullscreen auto-cycle swaps to the next
@@ -817,6 +828,18 @@ tbody tr:hover { background: var(--surface-soft); }
 .badge-approved { background: var(--success-bg); color: var(--success); }
 .badge-rejected { background: var(--danger-bg); color: var(--danger); }
 .badge-admin { background: #ece2ff; color: #6c37c9; }
+.badge-operator { background: #e0f0ff; color: #1462b0; }
+.badge-visitor { background: #f0f0f0; color: #666; }
+
+.role-select {
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--maroon-900);
+  background: var(--surface);
+}
 
 .acc-actions { display: flex; gap: 8px; }
 .acc-actions button {
@@ -877,6 +900,45 @@ tbody tr:hover { background: var(--surface-soft); }
   .tv-main-row { grid-template-columns: 1fr; }
   .tv-meta { margin-left: 0; text-align: left; }
   .tv-meta + .tv-meta { margin-left: 0; }
+
+  /* Mobile TV kiosk: the "everything fits one screen, zero scroll" layout
+     above only makes sense on an actual wide TV. Once .tv-main-row folds
+     down to a single column here, the flex-basis math those rules rely on
+     (percentage/flex heights computed against a fixed 100vh column) no
+     longer resolves cleanly — in practice it made the bar chart and the
+     rank list render on top of each other on a phone. So on a narrow
+     screen, fullscreen just becomes a normal scrollable stacked page, and
+     every chart gets an explicit height so Chart.js has something stable
+     to measure instead of inheriting whatever the last non-mobile layout
+     computed. */
+  .tv-page:fullscreen {
+    height: auto;
+    min-height: 100vh;
+    display: block;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 14px 14px 28px;
+  }
+  .tv-page:fullscreen .tv-controls { margin-bottom: 14px; }
+  .tv-page:fullscreen #tv-board-body { display: block; flex: none; }
+  .tv-page:fullscreen .tv-main-row { display: flex; flex-direction: column; flex: none; gap: 14px; }
+  .tv-page:fullscreen .tv-left-col { flex: none; gap: 14px; min-height: 0; }
+  .tv-page:fullscreen .tv-panel-bar,
+  .tv-page:fullscreen .tv-panel-rank,
+  .tv-page:fullscreen .tv-panel-trend {
+    flex: none;
+    height: auto;
+    overflow: visible;
+  }
+  .tv-page:fullscreen .tv-panel-bar .tv-bar-wrap { flex: none; height: 260px; }
+  .tv-page:fullscreen .tv-trend-grid { flex: none; overflow: visible; gap: 10px; }
+  .tv-page:fullscreen .tv-trend-item { flex: none; min-height: 0; }
+  .tv-page:fullscreen .tv-trend-item-chart { flex: none; height: 90px; }
+
+  /* Account rows: role dropdown + status badge need their own line once
+     the username no longer leaves enough room beside them. */
+  .account-row { flex-wrap: wrap; }
+  .acc-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
 }
 
 @media (max-width: 520px) {
