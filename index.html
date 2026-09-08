@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Monitoring Reject</title>
+<meta name="theme-color" content="#7a0e22" />
+<meta name="description" content="Input & monitoring data reject produksi" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===================== AUTH SCREENS ===================== -->
+  <section id="view-auth" class="auth-screen">
+    <div class="auth-bg-shapes" aria-hidden="true">
+      <span class="blob blob-1"></span>
+      <span class="blob blob-2"></span>
+      <span class="blob blob-3"></span>
+    </div>
+
+    <div class="auth-card" id="login-card">
+      <div class="brand">
+        <div class="brand-logo">MR</div>
+        <h1>Monitoring Reject</h1>
+        <p class="brand-sub">Masuk untuk melanjutkan</p>
+      </div>
+      <form id="form-login" novalidate>
+        <label class="field">
+          <span>Username</span>
+          <input type="text" id="login-username" autocomplete="username" required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </label>
+        <div class="form-message form-error" id="login-error" hidden></div>
+        <div class="form-message form-success" id="login-success" hidden></div>
+        <button type="submit" class="btn-primary" id="btn-login-submit">
+          <span class="btn-label">Masuk</span>
+          <span class="btn-spinner" hidden></span>
+        </button>
+      </form>
+      <p class="switch-auth">Belum punya akun? <button type="button" class="link-btn" id="btn-show-register">Daftar</button></p>
+    </div>
+
+    <div class="auth-card" id="register-card" hidden>
+      <div class="brand">
+        <div class="brand-logo">MR</div>
+        <h1>Buat Akun</h1>
+        <p class="brand-sub">Akun baru perlu disetujui admin sebelum bisa login</p>
+      </div>
+      <form id="form-register" novalidate>
+        <label class="field">
+          <span>Username</span>
+          <input type="text" id="register-username" autocomplete="username" minlength="3" required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="register-password" autocomplete="new-password" minlength="6" required />
+        </label>
+        <label class="field">
+          <span>Konfirmasi Password</span>
+          <input type="password" id="register-password2" autocomplete="new-password" minlength="6" required />
+        </label>
+        <div class="form-message form-error" id="register-error" hidden></div>
+        <div class="form-message form-success" id="register-success" hidden></div>
+        <button type="submit" class="btn-primary" id="btn-register-submit">
+          <span class="btn-label">Daftar</span>
+          <span class="btn-spinner" hidden></span>
+        </button>
+      </form>
+      <p class="switch-auth">Sudah punya akun? <button type="button" class="link-btn" id="btn-show-login">Masuk</button></p>
+    </div>
+  </section>
+
+  <!-- ===================== APP SHELL ===================== -->
+  <div id="view-app" hidden>
+
+    <header class="topbar">
+      <button id="btn-hamburger" class="hamburger" aria-label="Buka menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="topbar-title" id="page-title">Input Data Reject</div>
+      <div class="topbar-user">
+        <button class="user-chip" id="current-username" title="Ganti password">-</button>
+        <button id="btn-logout" class="icon-btn" title="Keluar" aria-label="Keluar">⏻</button>
+      </div>
+    </header>
+
+    <div id="nav-backdrop" class="nav-backdrop" hidden></div>
+
+    <div id="modal-backdrop" class="modal-backdrop" hidden></div>
+    <div id="modal-change-password" class="modal-card" hidden>
+      <h3 class="card-title">Ganti Password</h3>
+      <form id="form-change-password" novalidate>
+        <label class="field">
+          <span>Password Lama</span>
+          <input type="password" id="cp-old" autocomplete="current-password" required />
+        </label>
+        <label class="field">
+          <span>Password Baru</span>
+          <input type="password" id="cp-new" autocomplete="new-password" minlength="6" required />
+        </label>
+        <label class="field">
+          <span>Konfirmasi Password Baru</span>
+          <input type="password" id="cp-new2" autocomplete="new-password" minlength="6" required />
+        </label>
+        <div class="form-message form-error" id="cp-error" hidden></div>
+        <div class="form-message form-success" id="cp-success" hidden></div>
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="btn-cp-cancel">Batal</button>
+          <button type="submit" class="btn-primary" id="btn-cp-submit">
+            <span class="btn-label">Simpan</span>
+            <span class="btn-spinner" hidden></span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <nav id="nav-drawer" class="nav-drawer" aria-hidden="true">
+      <div class="nav-brand">
+        <div class="brand-logo small">MR</div>
+        <div>
+          <div class="nav-brand-title">Monitoring Reject</div>
+          <div class="nav-brand-sub" id="nav-role-badge">user</div>
+        </div>
+      </div>
+      <button class="nav-item active" data-target="input">
+        <span class="nav-icon">📝</span> Input Data
+      </button>
+      <button class="nav-item" data-target="dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </button>
+      <button class="nav-item" data-target="accounts" id="nav-accounts" hidden>
+        <span class="nav-icon">👤</span> Kelola Akun
+      </button>
+      <div class="nav-spacer"></div>
+      <button class="nav-item nav-logout" id="btn-logout-drawer">
+        <span class="nav-icon">🚪</span> Keluar
+      </button>
+    </nav>
+
+    <main class="content">
+
+      <!-- ---------- PAGE: INPUT ---------- -->
+      <section id="page-input" class="page active">
+        <div class="card form-card">
+          <h2 class="card-title">Form Input Data Reject</h2>
+          <form id="form-input-reject" novalidate>
+            <div class="form-grid">
+              <label class="field">
+                <span>Tanggal</span>
+                <input type="date" id="input-tanggal" required />
+              </label>
+              <label class="field">
+                <span>Shift</span>
+                <select id="input-shift" required>
+                  <option value="" disabled selected>Pilih Shift...</option>
+                  <option value="1">Shift 1</option>
+                  <option value="2">Shift 2</option>
+                  <option value="3">Shift 3</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Divisi</span>
+                <select id="input-divisi" required>
+                  <option value="" disabled selected>Pilih Divisi...</option>
+                  <option value="Biscuit">Biscuit</option>
+                  <option value="Wafer">Wafer</option>
+                </select>
+              </label>
+              <label class="field" id="group-plant" hidden>
+                <span>Plant</span>
+                <select id="input-plant" required>
+                  <option value="" disabled selected>Pilih Plant...</option>
+                </select>
+              </label>
+              <label class="field" id="group-line" hidden>
+                <span>Line</span>
+                <select id="input-line" required>
+                  <option value="" disabled selected>Pilih Line...</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="form-grid two-col">
+              <label class="field">
+                <span>Output Produksi (Kg)</span>
+                <input type="number" id="input-output" step="0.001" min="0" inputmode="decimal" placeholder="Contoh: 1000.123" required />
+                <small class="field-hint">Maksimal 3 angka di belakang koma</small>
+              </label>
+              <label class="field">
+                <span>Total Reject (Kg)</span>
+                <input type="number" id="input-reject" step="0.001" min="0" inputmode="decimal" placeholder="Contoh: 25.567" required />
+                <small class="field-hint">Maksimal 3 angka di belakang koma</small>
+              </label>
+            </div>
+
+            <div class="form-message form-error" id="input-error" hidden></div>
+            <div class="form-message form-success" id="input-success" hidden></div>
+
+            <div class="form-actions">
+              <button type="reset" class="btn-ghost">Batal</button>
+              <button type="submit" class="btn-primary" id="btn-input-submit">
+                <span class="btn-label">Simpan Data</span>
+                <span class="btn-spinner" hidden></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---------- PAGE: DASHBOARD ---------- -->
+      <section id="page-dashboard" class="page">
+        <div class="card filter-card">
+          <div class="filter-row">
+            <label class="field">
+              <span>Periode Awal</span>
+              <input type="date" id="filter-start" />
+            </label>
+            <label class="field">
+              <span>Periode Akhir</span>
+              <input type="date" id="filter-end" />
+            </label>
+
+            <div class="field multiselect-field">
+              <span>Divisi</span>
+              <div class="multiselect" id="ms-divisi" data-label="Semua Divisi"></div>
+            </div>
+            <div class="field multiselect-field">
+              <span>Plant</span>
+              <div class="multiselect" id="ms-plant" data-label="Semua Plant"></div>
+            </div>
+            <div class="field multiselect-field">
+              <span>Line</span>
+              <div class="multiselect" id="ms-line" data-label="Semua Line"></div>
+            </div>
+
+            <div class="filter-actions">
+              <button class="btn-ghost" id="btn-filter-reset">Reset</button>
+              <button class="btn-primary" id="btn-filter-apply">
+                <span class="btn-label">Terapkan</span>
+                <span class="btn-spinner" hidden></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi-card kpi-output">
+            <div class="kpi-label">Total Output (Kg)</div>
+            <div class="kpi-value" id="kpi-output">0</div>
+          </div>
+          <div class="kpi-card kpi-reject">
+            <div class="kpi-label">Total Reject (Kg)</div>
+            <div class="kpi-value" id="kpi-reject">0</div>
+          </div>
+          <div class="kpi-card kpi-pct">
+            <div class="kpi-label">Rata-rata Reject (%)</div>
+            <div class="kpi-value" id="kpi-pct">0%</div>
+          </div>
+        </div>
+
+        <div class="chart-grid">
+          <div class="card chart-card">
+            <div class="card-title-row">
+              <h2 class="card-title">Perbandingan Reject per Line</h2>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-bar"></canvas></div>
+            <div class="empty-state" id="empty-bar" hidden>Belum ada data untuk filter ini.</div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-title-row">
+              <h2 class="card-title">Tren Reject Harian</h2>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+            <div class="empty-state" id="empty-trend" hidden>Belum ada data untuk filter ini.</div>
+          </div>
+        </div>
+
+        <div class="card table-card">
+          <h2 class="card-title">Rincian per Line</h2>
+          <div class="table-wrap">
+            <table id="table-detail">
+              <thead>
+                <tr>
+                  <th>Line</th>
+                  <th>Divisi</th>
+                  <th>Plant</th>
+                  <th>Output (Kg)</th>
+                  <th>Reject (Kg)</th>
+                  <th>Reject (%)</th>
+                </tr>
+              </thead>
+              <tbody id="table-detail-body"></tbody>
+            </table>
+          </div>
+          <div class="empty-state" id="empty-table" hidden>Belum ada data untuk filter ini.</div>
+        </div>
+      </section>
+
+      <!-- ---------- PAGE: ACCOUNTS (admin only) ---------- -->
+      <section id="page-accounts" class="page">
+        <div class="card">
+          <h2 class="card-title">Menunggu Persetujuan</h2>
+          <div id="pending-list" class="account-list"></div>
+          <div class="empty-state" id="empty-pending" hidden>Tidak ada akun yang menunggu persetujuan.</div>
+        </div>
+        <div class="card">
+          <h2 class="card-title">Semua Akun</h2>
+          <div id="all-users-list" class="account-list"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+</div>
+
+<script src="libs/chart.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/input-form.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
