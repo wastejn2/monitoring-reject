@@ -6,6 +6,7 @@
 const PAGE_TITLES = {
   input: 'Input Data Reject',
   dashboard: 'Dashboard',
+  tv: 'Monitoring TV',
   accounts: 'Kelola Akun'
 };
 
@@ -16,6 +17,7 @@ const App = {
     AuthUI.init();
     InputForm.init();
     Dashboard.init();
+    TvBoard.init();
     initHamburgerNav((target) => this.handleNavigate(target));
 
     const user = Session.getUser();
@@ -43,7 +45,7 @@ const App = {
     const isAdmin = user && user.role === 'admin';
     document.getElementById('nav-accounts').hidden = !isAdmin;
 
-    this.goToPage('input');
+    this.goToPage('dashboard');
   },
 
   handleNavigate(target) {
@@ -53,6 +55,8 @@ const App = {
   goToPage(target) {
     const user = Session.getUser();
     if (target === 'accounts' && !(user && user.role === 'admin')) target = 'input';
+
+    if (this.currentPage === 'tv' && target !== 'tv') TvBoard.stop();
 
     document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
     const pageEl = document.getElementById(`page-${target}`);
@@ -67,6 +71,7 @@ const App = {
 
     if (target === 'dashboard') Dashboard.refresh();
     if (target === 'accounts') AccountsPage.load();
+    if (target === 'tv') TvBoard.start();
   }
 };
 
