@@ -1,12 +1,7 @@
 /**
  * MONITORING REJECT — Input Data Reject page
- * Cascading dropdown rules (mirrored on the backend for validation):
- *   Divisi = Biscuit -> Plant: Stage 1 / Stage 2
- *     Stage 1 -> Line: 1.1, 2.1, 3.1, 4.1, 5.1
- *     Stage 2 -> Line: 1.2, 2.2, 3.2, 4.2, 5.2
- *   Divisi = Wafer -> Plant: Waferstick / Waferflat
- *     Waferstick -> Line: Line 1 WS ... Line 9 WS
- *     Waferflat  -> Line: Line 1 WF ... Line 14 WF
+ * Plant -> Line cascade (mirrored on the backend for validation).
+ * Plant codes: 1111 Waferflat, 1111 Waferstick, 1112, 1113.
  */
 
 function genLines(prefix, suffix, from, to) {
@@ -15,16 +10,19 @@ function genLines(prefix, suffix, from, to) {
   return arr;
 }
 
-const LINE_CONFIG = {
-  Biscuit: {
-    'Stage 1': ['1.1', '2.1', '3.1', '4.1', '5.1'],
-    'Stage 2': ['1.2', '2.2', '3.2', '4.2', '5.2']
-  },
-  Wafer: {
-    Waferstick: genLines('Line ', ' WS', 1, 9),
-    Waferflat: genLines('Line ', ' WF', 1, 14)
-  }
+const PLANT_CONFIG = {
+  '1111 Waferflat': genLines('Line ', ' WF', 1, 14),
+  '1111 Waferstick': genLines('Line ', ' WS', 1, 9),
+  '1112': genLines('Line ', '.1', 1, 5),
+  '1113': genLines('Line ', '.2', 1, 5)
 };
+
+// Explicit display order. IMPORTANT: do NOT use Object.keys(PLANT_CONFIG)
+// for anything user-facing — '1112'/'1113' are numeric-looking keys, and JS
+// silently reorders those ahead of '1111 Waferflat'/'1111 Waferstick' in
+// Object.keys() (integer-like string keys always iterate first, in
+// ascending order, regardless of insertion order).
+const PLANT_ORDER = ['1111 Waferflat', '1111 Waferstick', '1112', '1113'];
 
 function hasMaxDecimals(value, max) {
   const str = String(value);
@@ -39,8 +37,6 @@ const InputForm = {
     this.els.form = document.getElementById('form-input-reject');
     this.els.tanggal = document.getElementById('input-tanggal');
     this.els.shift = document.getElementById('input-shift');
-    this.els.divisi = document.getElementById('input-divisi');
-    this.els.groupPlant = document.getElementById('group-plant');
     this.els.plant = document.getElementById('input-plant');
     this.els.groupLine = document.getElementById('group-line');
     this.els.line = document.getElementById('input-line');
@@ -53,7 +49,6 @@ const InputForm = {
     // default date = today
     this.els.tanggal.value = new Date().toISOString().slice(0, 10);
 
-    this.els.divisi.addEventListener('change', () => this.onDivisiChange());
     this.els.plant.addEventListener('change', () => this.onPlantChange());
     this.els.form.addEventListener('submit', (e) => this.onSubmit(e));
     this.els.form.addEventListener('reset', () => setTimeout(() => this.resetCascade(), 0));
@@ -64,23 +59,9 @@ const InputForm = {
       options.map((o) => `<option value="${o}">${o}</option>`).join('');
   },
 
-  onDivisiChange() {
-    const divisi = this.els.divisi.value;
-    const plants = LINE_CONFIG[divisi] ? Object.keys(LINE_CONFIG[divisi]) : [];
-    if (plants.length) {
-      this.fillSelect(this.els.plant, plants, 'Pilih Plant...');
-      this.els.groupPlant.hidden = false;
-    } else {
-      this.els.groupPlant.hidden = true;
-    }
-    this.els.groupLine.hidden = true;
-    this.els.line.innerHTML = '<option value="" disabled selected>Pilih Line...</option>';
-  },
-
   onPlantChange() {
-    const divisi = this.els.divisi.value;
     const plant = this.els.plant.value;
-    const lines = (LINE_CONFIG[divisi] && LINE_CONFIG[divisi][plant]) || [];
+    const lines = PLANT_CONFIG[plant] || [];
     if (lines.length) {
       this.fillSelect(this.els.line, lines, 'Pilih Line...');
       this.els.groupLine.hidden = false;
@@ -90,9 +71,7 @@ const InputForm = {
   },
 
   resetCascade() {
-    this.els.groupPlant.hidden = true;
     this.els.groupLine.hidden = true;
-    this.els.plant.innerHTML = '<option value="" disabled selected>Pilih Plant...</option>';
     this.els.line.innerHTML = '<option value="" disabled selected>Pilih Line...</option>';
     this.els.tanggal.value = new Date().toISOString().slice(0, 10);
     hideMessage(this.els.error);
@@ -106,13 +85,12 @@ const InputForm = {
 
     const tanggal = this.els.tanggal.value;
     const shift = this.els.shift.value;
-    const divisi = this.els.divisi.value;
     const plant = this.els.plant.value;
     const line = this.els.line.value;
     const outputRaw = this.els.output.value;
     const rejectRaw = this.els.reject.value;
 
-    if (!tanggal || !shift || !divisi || !plant || !line || outputRaw === '' || rejectRaw === '') {
+    if (!tanggal || !shift || !plant || !line || outputRaw === '' || rejectRaw === '') {
       showMessage(this.els.error, 'Semua field wajib diisi.', 'error');
       return;
     }
@@ -133,7 +111,7 @@ const InputForm = {
 
     setButtonLoading(this.els.submitBtn, true);
     const res = await Api.submitReject({
-      tanggal, shift, divisi, plant, line,
+      tanggal, shift, plant, line,
       outputProduksi: output,
       totalReject: reject
     });
@@ -147,8 +125,8 @@ const InputForm = {
     showMessage(this.els.success, `Data tersimpan. Reject: ${res.rejectPercent}%`, 'success');
     toast('Data reject berhasil disimpan.', 'success');
 
-    // Keep Tanggal/Shift/Divisi/Plant (common case: logging several lines in
-    // a row for the same shift), just clear Line + numbers for the next entry.
+    // Keep Tanggal/Shift/Plant (common case: logging several lines in a row
+    // for the same shift), just clear Line + numbers for the next entry.
     this.els.line.value = '';
     this.els.output.value = '';
     this.els.reject.value = '';
@@ -161,7 +139,7 @@ function mapSubmitError(code) {
     unauthorized: 'Sesi berakhir, silakan login kembali.',
     invalid_tanggal: 'Tanggal tidak valid.',
     invalid_shift: 'Shift tidak valid.',
-    invalid_combo: 'Kombinasi Divisi/Plant/Line tidak valid.',
+    invalid_combo: 'Kombinasi Plant/Line tidak valid.',
     invalid_output: 'Output produksi tidak valid.',
     invalid_reject: 'Total reject tidak valid.',
     reject_exceeds_output: 'Total reject tidak boleh lebih besar dari output produksi.',
