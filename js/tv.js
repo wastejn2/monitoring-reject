@@ -20,9 +20,26 @@ const TV_SLIDE_MS = 380; // must match the CSS transition duration on .tv-board-
 // the switch itself never has to wait on the network.
 const TV_PREFETCH_LEAD_MS = 6000;
 
+// Shift 3 runs 23:00-07:00, so it belongs to the production day it started
+// on even though the clock has already rolled into the next calendar date.
+// The TV board's notion of "today" (and therefore H-1 and the 7-day trend
+// window) has to roll over at 07:00, not at midnight, or it would flip to
+// showing "today" as H-1 for the last 7 hours of every Shift 3 while that
+// shift's data is still being recorded under the previous date.
+const TV_DAY_ROLLOVER_HOUR = 7;
+function tvProductionToday() {
+  const d = new Date();
+  if (d.getHours() < TV_DAY_ROLLOVER_HOUR) d.setDate(d.getDate() - 1);
+  return d;
+}
+function tvIsoDateDaysAgo(days) {
+  const d = tvProductionToday();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
 function tvLast7DatesEndingYesterday() {
   const arr = [];
-  for (let i = 7; i >= 1; i--) arr.push(isoDateDaysAgo(i));
+  for (let i = 7; i >= 1; i--) arr.push(tvIsoDateDaysAgo(i));
   return arr;
 }
 
