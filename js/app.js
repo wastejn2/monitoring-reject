@@ -7,14 +7,16 @@ const PAGE_TITLES = {
   input: 'Input Data Reject',
   dashboard: 'Dashboard',
   tv: 'Monitoring TV',
-  accounts: 'Kelola Akun'
+  accounts: 'Kelola Akun',
+  history: 'Riwayat Data'
 };
 
 // Which pages each role is allowed to reach — admin sees everything, operator
 // gets Input + Dashboard + TV, visitor is read-only (Dashboard + TV only, no
-// Input, no account management).
+// Input, no account management). Riwayat Data (raw edit/delete) is admin-only,
+// same as Kelola Akun.
 const ROLE_PAGES = {
-  admin: ['input', 'dashboard', 'tv', 'accounts'],
+  admin: ['input', 'dashboard', 'tv', 'accounts', 'history'],
   operator: ['input', 'dashboard', 'tv'],
   visitor: ['dashboard', 'tv']
 };
@@ -30,6 +32,7 @@ const App = {
     InputForm.init();
     Dashboard.init();
     TvBoard.init();
+    HistoryPage.init();
     initHamburgerNav((target) => this.handleNavigate(target));
     this.initVersionBadge();
 
@@ -165,6 +168,7 @@ const App = {
     if (target === 'dashboard') Dashboard.refresh();
     if (target === 'accounts') AccountsPage.load();
     if (target === 'tv') TvBoard.start();
+    if (target === 'history') HistoryPage.load();
   }
 };
 
