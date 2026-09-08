@@ -2,13 +2,17 @@
  * MONITORING REJECT — TV Monitoring board
  * Continuous-display page (requires login, same as every other page).
  * Shows H-1 (kemarin) reject per shift for one selected Plant, a 7-day
- * trend mini-chart per Line, and a Top Rank list (ranked by 7-day average
- * reject, total also shown) — all scoped to the selected Plant.
+ * trend mini-chart per Line, and a Top Rank list (ranked by average reject
+ * over however many days actually have data — total also shown) — all
+ * scoped to the selected Plant. Fullscreen mode auto-cycles through every
+ * Plant every 30 seconds with a soft fade transition.
  */
 
 const TV_PLANT_KEY = 'mr_tv_plant';
 const TV_REFRESH_MS = 5 * 60 * 1000; // 5 minutes — fine for a board that just sits on a TV
+const TV_CYCLE_MS = 30 * 1000; // fullscreen-only: how long each Plant stays on screen
 const TV_TOP_RANK_COUNT = 5;
+const TV_FADE_MS = 320; // must match the CSS transition duration on .tv-board-body
 
 function tvLast7DatesEndingYesterday() {
   const arr = [];
@@ -16,9 +20,16 @@ function tvLast7DatesEndingYesterday() {
   return arr;
 }
 
-function tvBarValueLabelsPlugin(colorFor) {
+function tvWait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Draws the value on top of each bar, and a small S1/S2/S3 tag near the
+// bottom of the bar itself — replaces the old top-of-chart color legend,
+// since the tag on the bar already says which shift it is.
+function tvBarDecorationsPlugin(shiftLabels) {
   return {
-    id: 'tvBarValueLabels',
+    id: 'tvBarDecorations',
     afterDatasetsDraw(chart) {
       const ctx = chart.ctx;
       chart.data.datasets.forEach((dataset, dsIndex) => {
@@ -27,11 +38,19 @@ function tvBarValueLabelsPlugin(colorFor) {
         meta.data.forEach((bar, index) => {
           const value = dataset.data[index];
           if (!value) return;
+          const barHeight = bar.base - bar.y;
+
           ctx.save();
-          ctx.fillStyle = colorFor ? colorFor(dsIndex) : '#3a0510';
-          ctx.font = '700 11.5px "Segoe UI", sans-serif';
           ctx.textAlign = 'center';
+          ctx.fillStyle = '#3a0510';
+          ctx.font = '700 11.5px "Segoe UI", sans-serif';
           ctx.fillText(formatNumberID(value, 1), bar.x, bar.y - 6);
+
+          if (barHeight > 22) {
+            ctx.fillStyle = dsIndex === 0 ? '#3a0510' : '#ffffff';
+            ctx.font = '700 10px "Segoe UI", sans-serif';
+            ctx.fillText(shiftLabels[dsIndex], bar.x, bar.base - 8);
+          }
           ctx.restore();
         });
       });
@@ -44,7 +63,9 @@ const TvBoard = {
   chart: null,
   trendCharts: [],
   timer: null,
+  cycleTimer: null,
   loading: false,
+  fullscreenBound: false,
 
   init() {
     this.els = {
@@ -57,7 +78,10 @@ const TvBoard = {
       rankList: document.getElementById('tv-rank-list'),
       emptyRank: document.getElementById('tv-empty-rank'),
       trendGrid: document.getElementById('tv-trend-grid'),
-      emptyTrend: document.getElementById('tv-empty-trend')
+      emptyTrend: document.getElementById('tv-empty-trend'),
+      board: document.getElementById('tv-board-body'),
+      page: document.getElementById('page-tv'),
+      fullscreenBtn: document.getElementById('tv-fullscreen-btn')
     };
 
     const plants = PLANT_ORDER.slice();
@@ -69,7 +93,16 @@ const TvBoard = {
     this.els.plantSelect.addEventListener('change', () => {
       localStorage.setItem(TV_PLANT_KEY, this.els.plantSelect.value);
       this.refresh();
+      // manual override during fullscreen auto-cycle: give it a fresh 30s
+      if (this.cycleTimer) this.startCycle();
     });
+
+    this.els.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
+
+    if (!this.fullscreenBound) {
+      document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
+      this.fullscreenBound = true;
+    }
   },
 
   start() {
@@ -80,6 +113,49 @@ const TvBoard = {
 
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    this.stopCycle();
+  },
+
+  toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      this.els.page.requestFullscreen().catch(() => toast('Browser ini tidak mendukung mode layar penuh.', 'error'));
+    } else {
+      document.exitFullscreen();
+    }
+  },
+
+  onFullscreenChange() {
+    const isFull = document.fullscreenElement === this.els.page;
+    this.els.fullscreenBtn.textContent = isFull ? '⛶ Keluar Layar Penuh' : '⛶ Layar Penuh';
+    if (isFull) {
+      this.startCycle();
+    } else {
+      this.stopCycle();
+    }
+  },
+
+  startCycle() {
+    this.stopCycle();
+    this.cycleTimer = setInterval(() => this.advancePlant(), TV_CYCLE_MS);
+  },
+
+  stopCycle() {
+    if (this.cycleTimer) { clearInterval(this.cycleTimer); this.cycleTimer = null; }
+  },
+
+  async advancePlant() {
+    const plants = PLANT_ORDER;
+    const currentIndex = plants.indexOf(this.els.plantSelect.value);
+    const nextPlant = plants[(currentIndex + 1) % plants.length];
+
+    this.els.board.classList.add('tv-fading');
+    await tvWait(TV_FADE_MS);
+
+    this.els.plantSelect.value = nextPlant;
+    localStorage.setItem(TV_PLANT_KEY, nextPlant);
+    await this.refresh();
+
+    this.els.board.classList.remove('tv-fading');
   },
 
   async refresh() {
@@ -136,13 +212,16 @@ const TvBoard = {
 
     const totals = activeLines.map((l) => perLine.get(l).total);
     const shiftColors = { 1: '#d8b370', 2: '#c81e3a', 3: '#55091a' };
+    const shiftLabels = ['S1', 'S2', 'S3'];
 
-    const datasets = ['1', '2', '3'].map((shiftKey) => ({
+    const datasets = ['1', '2', '3'].map((shiftKey, i) => ({
       label: `Shift ${shiftKey}`,
       data: activeLines.map((l) => Number((perLine.get(l)[shiftKey] || 0).toFixed(3))),
       backgroundColor: shiftColors[shiftKey],
       borderRadius: 5,
-      maxBarThickness: 46
+      maxBarThickness: 50,
+      barPercentage: 0.95,
+      categoryPercentage: 0.82
     }));
 
     if (this.chart) this.chart.destroy();
@@ -155,7 +234,7 @@ const TvBoard = {
         animation: { duration: 500, easing: 'easeOutQuart' },
         layout: { padding: { top: 22 } },
         plugins: {
-          legend: { position: 'top', labels: { boxWidth: 14, font: { size: 12.5, weight: '600' } } },
+          legend: { display: false },
           tooltip: {
             backgroundColor: '#3a0510',
             padding: 10,
@@ -175,10 +254,10 @@ const TvBoard = {
               }
             }
           },
-          y: { grid: { color: '#f1e3e5' }, ticks: { callback: (v) => formatNumberID(v, 0) } }
+          y: { display: false }
         }
       },
-      plugins: [tvBarValueLabelsPlugin(() => '#3a0510')]
+      plugins: [tvBarDecorationsPlugin(shiftLabels)]
     });
   },
 
@@ -198,7 +277,20 @@ const TvBoard = {
       const values = dates.map((d) => Number(dayMap.get(d).toFixed(3)));
       const total = Number(values.reduce((a, b) => a + b, 0).toFixed(3));
       if (total <= 0) return;
-      summary.push({ line, values, total, avg: total / dates.length });
+      // Average is total divided by however many days actually have reject
+      // data, NOT a fixed /7 — a Line that only reported on 2 of the 7 days
+      // gets its average from those 2 days, not diluted by 5 empty ones.
+      const activeDays = values.filter((v) => v > 0);
+      const daysWithData = activeDays.length || 1;
+      summary.push({
+        line,
+        values,
+        total,
+        avg: total / daysWithData,
+        max: Math.max(...activeDays),
+        min: Math.min(...activeDays),
+        daysWithData
+      });
     });
 
     this.renderTrend(summary, dates);
@@ -225,13 +317,16 @@ const TvBoard = {
             <span class="tv-trend-item-line">${escapeHtml(entry.line)}</span>
             <span class="tv-trend-item-total">Total: ${formatNumberID(entry.total, 1)} Kg</span>
           </div>
+          <div class="tv-trend-item-stats">
+            <span>Max <b>${formatNumberID(entry.max, 1)}</b></span>
+            <span>Min <b>${formatNumberID(entry.min, 1)}</b></span>
+            <span>Avg <b>${formatNumberID(entry.avg, 1)}</b></span>
+          </div>
           <div class="tv-trend-item-chart"><canvas></canvas></div>
         `;
         this.els.trendGrid.appendChild(card);
 
         const canvas = card.querySelector('canvas');
-        const max = Math.max(...entry.values, 0.001);
-        const avg = entry.avg;
 
         const chart = new Chart(canvas.getContext('2d'), {
           type: 'line',
@@ -251,7 +346,7 @@ const TvBoard = {
               },
               {
                 label: 'Max',
-                data: dates.map(() => max),
+                data: dates.map(() => entry.max),
                 borderColor: '#d8b370',
                 borderDash: [5, 4],
                 borderWidth: 1.5,
@@ -260,7 +355,7 @@ const TvBoard = {
               },
               {
                 label: 'Rata-rata',
-                data: dates.map(() => avg),
+                data: dates.map(() => entry.avg),
                 borderColor: '#55091a',
                 borderDash: [2, 3],
                 borderWidth: 1.5,
@@ -308,7 +403,7 @@ const TvBoard = {
         <div class="tv-rank-pos">${index + 1}</div>
         <div class="tv-rank-info">
           <div class="tv-rank-line">${escapeHtml(entry.line)}</div>
-          <div class="tv-rank-total">Total 7 hari: ${formatNumberID(entry.total, 1)} Kg</div>
+          <div class="tv-rank-total">Total 7 hari: ${formatNumberID(entry.total, 1)} Kg (${entry.daysWithData} hari data)</div>
         </div>
         <div class="tv-rank-avg">
           <div class="tv-rank-avg-value">${formatNumberID(entry.avg, 1)}</div>
