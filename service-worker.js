@@ -1,7 +1,7 @@
 // Bump this number whenever any cached file changes — that's the ONLY edit
 // usually needed here. It forces every client to fetch fresh files instead
 // of serving stale ones from cache.
-const APP_VERSION = 'v1.9';
+const APP_VERSION = 'v2';
 const CACHE_NAME = `monitoring-reject-${APP_VERSION}`;
 
 const APP_SHELL = [
@@ -25,6 +25,15 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
   );
+});
+
+// Lets the page ask the active service worker which version it's running,
+// so the nav-drawer version label never has to be hand-updated separately
+// from APP_VERSION above.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ version: APP_VERSION });
+  }
 });
 
 self.addEventListener('activate', (event) => {
