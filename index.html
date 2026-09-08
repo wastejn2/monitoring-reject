@@ -25,7 +25,7 @@
 
     <div class="auth-card" id="login-card">
       <div class="brand">
-        <div class="brand-logo">MR</div>
+        <img class="brand-logo" src="icons/icon-192.png" alt="Logo" />
         <h1>Monitoring Reject</h1>
         <p class="brand-sub">Masuk untuk melanjutkan</p>
       </div>
@@ -50,7 +50,7 @@
 
     <div class="auth-card" id="register-card" hidden>
       <div class="brand">
-        <div class="brand-logo">MR</div>
+        <img class="brand-logo" src="icons/icon-192.png" alt="Logo" />
         <h1>Buat Akun</h1>
         <p class="brand-sub">Akun baru perlu disetujui admin sebelum bisa login</p>
       </div>
@@ -124,7 +124,7 @@
 
     <nav id="nav-drawer" class="nav-drawer" aria-hidden="true">
       <div class="nav-brand">
-        <div class="brand-logo small">MR</div>
+        <img class="brand-logo small" src="icons/icon-192.png" alt="Logo" />
         <div>
           <div class="nav-brand-title">Monitoring Reject</div>
           <div class="nav-brand-sub" id="nav-role-badge">user</div>
@@ -135,6 +135,9 @@
       </button>
       <button class="nav-item" data-target="dashboard">
         <span class="nav-icon">📊</span> Dashboard
+      </button>
+      <button class="nav-item" data-target="tv">
+        <span class="nav-icon">📺</span> Monitoring TV
       </button>
       <button class="nav-item" data-target="accounts" id="nav-accounts" hidden>
         <span class="nav-icon">👤</span> Kelola Akun
@@ -167,17 +170,13 @@
                 </select>
               </label>
               <label class="field">
-                <span>Divisi</span>
-                <select id="input-divisi" required>
-                  <option value="" disabled selected>Pilih Divisi...</option>
-                  <option value="Biscuit">Biscuit</option>
-                  <option value="Wafer">Wafer</option>
-                </select>
-              </label>
-              <label class="field" id="group-plant" hidden>
                 <span>Plant</span>
                 <select id="input-plant" required>
                   <option value="" disabled selected>Pilih Plant...</option>
+                  <option value="1111 Waferflat">1111 Waferflat</option>
+                  <option value="1111 Waferstick">1111 Waferstick</option>
+                  <option value="1112">1112</option>
+                  <option value="1113">1113</option>
                 </select>
               </label>
               <label class="field" id="group-line" hidden>
@@ -228,10 +227,6 @@
               <input type="date" id="filter-end" />
             </label>
 
-            <div class="field multiselect-field">
-              <span>Divisi</span>
-              <div class="multiselect" id="ms-divisi" data-label="Semua Divisi"></div>
-            </div>
             <div class="field multiselect-field">
               <span>Plant</span>
               <div class="multiselect" id="ms-plant" data-label="Semua Plant"></div>
@@ -290,7 +285,6 @@
               <thead>
                 <tr>
                   <th>Line</th>
-                  <th>Divisi</th>
                   <th>Plant</th>
                   <th>Output (Kg)</th>
                   <th>Reject (Kg)</th>
@@ -301,6 +295,44 @@
             </table>
           </div>
           <div class="empty-state" id="empty-table" hidden>Belum ada data untuk filter ini.</div>
+        </div>
+      </section>
+
+      <!-- ---------- PAGE: TV MONITORING ---------- -->
+      <section id="page-tv" class="page tv-page">
+        <div class="card tv-controls">
+          <label class="field tv-plant-field">
+            <span>Plant</span>
+            <select id="tv-plant"></select>
+          </label>
+          <div class="tv-meta">
+            <div class="tv-meta-label">Data Ditampilkan (H-1)</div>
+            <div class="tv-meta-value" id="tv-date-h1">-</div>
+          </div>
+          <div class="tv-meta">
+            <div class="tv-meta-label">Terakhir Diperbarui</div>
+            <div class="tv-meta-value" id="tv-last-updated">-</div>
+          </div>
+        </div>
+
+        <div class="card tv-panel tv-panel-bar">
+          <h2 class="card-title">Reject per Shift — <span id="tv-bar-plant-label"></span></h2>
+          <div class="chart-wrap tv-bar-wrap"><canvas id="tv-chart-bar"></canvas></div>
+          <div class="empty-state" id="tv-empty-bar" hidden>Belum ada data H-1 untuk plant ini.</div>
+        </div>
+
+        <div class="tv-grid-lower">
+          <div class="card tv-panel tv-panel-rank">
+            <h2 class="card-title">Top Rank Reject (Rata-rata 7 Hari)</h2>
+            <div class="tv-rank-list" id="tv-rank-list"></div>
+            <div class="empty-state" id="tv-empty-rank" hidden>Belum ada data 7 hari terakhir.</div>
+          </div>
+
+          <div class="card tv-panel tv-panel-trend">
+            <h2 class="card-title">Trend 7 Hari Terakhir</h2>
+            <div class="tv-trend-grid" id="tv-trend-grid"></div>
+            <div class="empty-state" id="tv-empty-trend" hidden>Belum ada data 7 hari terakhir.</div>
+          </div>
         </div>
       </section>
 
@@ -329,6 +361,7 @@
 <script src="js/auth.js"></script>
 <script src="js/input-form.js"></script>
 <script src="js/dashboard.js"></script>
+<script src="js/tv.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
