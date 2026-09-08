@@ -5,14 +5,20 @@
  * trend mini-chart per Line, and a Top Rank list (ranked by average reject
  * over however many days actually have data — total also shown) — all
  * scoped to the selected Plant. Fullscreen mode auto-cycles through every
- * Plant every 30 seconds with a soft fade transition.
+ * Plant every 30 seconds with a sliding transition — the next Plant's data
+ * is fetched in the background a few seconds early so the slide never has
+ * to wait on the network (and never fires if that data isn't ready yet).
  */
 
 const TV_PLANT_KEY = 'mr_tv_plant';
 const TV_REFRESH_MS = 5 * 60 * 1000; // 5 minutes — fine for a board that just sits on a TV
 const TV_CYCLE_MS = 30 * 1000; // fullscreen-only: how long each Plant stays on screen
 const TV_TOP_RANK_COUNT = 5;
-const TV_FADE_MS = 320; // must match the CSS transition duration on .tv-board-body
+const TV_SLIDE_MS = 380; // must match the CSS transition duration on .tv-board-body
+// How long before the 30s mark to start fetching the NEXT Plant's data in the
+// background, so it's already sitting ready by the time the slide happens —
+// the switch itself never has to wait on the network.
+const TV_PREFETCH_LEAD_MS = 6000;
 
 function tvLast7DatesEndingYesterday() {
   const arr = [];
@@ -72,8 +78,15 @@ const TvBoard = {
   trendCharts: [],
   timer: null,
   cycleTimer: null,
+  cyclePrefetchTimer: null,
+  cycleActive: false,
   loading: false,
   fullscreenBound: false,
+  // Background-prefetch bookkeeping for the auto-cycle: data fetched ahead
+  // of time for whichever Plant comes next, keyed by Plant name, so the
+  // slide transition can render instantly instead of waiting on the API.
+  prefetchCache: new Map(),
+  prefetchInFlight: new Map(),
 
   init() {
     this.els = {
@@ -102,7 +115,11 @@ const TvBoard = {
       localStorage.setItem(TV_PLANT_KEY, this.els.plantSelect.value);
       this.refresh();
       // manual override during fullscreen auto-cycle: give it a fresh 30s
-      if (this.cycleTimer) this.startCycle();
+      // (also drops any stale prefetch, since the sequence just changed)
+      if (this.cycleActive) {
+        this.prefetchCache.clear();
+        this.startCycle();
+      }
     });
 
     this.els.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
@@ -144,26 +161,124 @@ const TvBoard = {
 
   startCycle() {
     this.stopCycle();
-    this.cycleTimer = setInterval(() => this.advancePlant(), TV_CYCLE_MS);
+    this.cycleActive = true;
+    this.scheduleCycleStep();
   },
 
   stopCycle() {
-    if (this.cycleTimer) { clearInterval(this.cycleTimer); this.cycleTimer = null; }
+    this.cycleActive = false;
+    if (this.cycleTimer) { clearTimeout(this.cycleTimer); this.cycleTimer = null; }
+    if (this.cyclePrefetchTimer) { clearTimeout(this.cyclePrefetchTimer); this.cyclePrefetchTimer = null; }
   },
 
-  async advancePlant() {
+  // Arms the two timers for one 30s dwell: one that kicks off a background
+  // fetch of the next Plant a few seconds early, and one that actually
+  // triggers the slide once the full 30s is up.
+  scheduleCycleStep() {
     const plants = PLANT_ORDER;
-    const currentIndex = plants.indexOf(this.els.plantSelect.value);
-    const nextPlant = plants[(currentIndex + 1) % plants.length];
+    const nextPlant = plants[(plants.indexOf(this.els.plantSelect.value) + 1) % plants.length];
+    const leadMs = Math.min(TV_PREFETCH_LEAD_MS, Math.floor(TV_CYCLE_MS / 2));
 
-    this.els.board.classList.add('tv-fading');
-    await tvWait(TV_FADE_MS);
+    this.cyclePrefetchTimer = setTimeout(() => {
+      if (this.cycleActive) this.prefetchPlant(nextPlant);
+    }, Math.max(0, TV_CYCLE_MS - leadMs));
+
+    this.cycleTimer = setTimeout(() => this.advancePlant(), TV_CYCLE_MS);
+  },
+
+  // Fetches one Plant's dashboard data without touching the UI — used both
+  // for the visible refresh() and for the silent background prefetch.
+  async fetchPlantData(plant) {
+    const dates = tvLast7DatesEndingYesterday();
+    const h1 = dates[dates.length - 1];
+    const res = await Api.getDashboardData({
+      startDate: dates[0],
+      endDate: h1,
+      plant: [plant]
+    });
+    return { res, dates, h1 };
+  },
+
+  // Kicks off (or reuses) a background fetch for `plant` and stashes the
+  // result in prefetchCache once it lands. Safe to call more than once for
+  // the same Plant — later calls just await the same in-flight request.
+  prefetchPlant(plant) {
+    if (this.prefetchInFlight.has(plant)) return this.prefetchInFlight.get(plant);
+    const promise = this.fetchPlantData(plant)
+      .then(({ res, dates, h1 }) => {
+        this.prefetchInFlight.delete(plant);
+        if (!res.ok) return null;
+        const entry = { rows: res.rows, dates, h1 };
+        this.prefetchCache.set(plant, entry);
+        return entry;
+      })
+      .catch(() => {
+        this.prefetchInFlight.delete(plant);
+        return null;
+      });
+    this.prefetchInFlight.set(plant, promise);
+    return promise;
+  },
+
+  // Pushes fetched data onto the screen — shared by refresh() and by the
+  // auto-cycle slide once the next Plant's (prefetched) data is in hand.
+  applyData(plant, rows, dates, h1) {
+    this.els.dateH1.textContent = formatShortDate(h1);
+    this.els.barPlantLabel.textContent = plant;
+    this.els.lastUpdated.textContent = tvFormatClock(new Date());
+    this.renderBar(rows, plant, h1);
+    this.renderTrendAndRank(rows, plant, dates);
+  },
+
+  // Auto-cycle step: waits for the next Plant's data to actually be ready
+  // (prefetched ahead of time in the common case, so this resolves
+  // instantly — but if the network was slow, this holds the CURRENT Plant
+  // on screen rather than switching to something half-loaded) and only
+  // then plays the slide transition.
+  async advancePlant() {
+    if (!this.cycleActive) return;
+    const plants = PLANT_ORDER;
+    const nextPlant = plants[(plants.indexOf(this.els.plantSelect.value) + 1) % plants.length];
+
+    let data = this.prefetchCache.get(nextPlant);
+    if (!data) data = await this.prefetchPlant(nextPlant);
+    if (!this.cycleActive) return; // fullscreen may have been exited while we waited
+
+    await this.playSlideTransition(nextPlant, data);
+    this.prefetchCache.delete(nextPlant);
+
+    if (this.cycleActive) this.scheduleCycleStep();
+  },
+
+  // PowerPoint-style push: current board slides out to the left, the new
+  // Plant's (already-fetched) data is swapped in off-screen to the right,
+  // then it slides into place. Because `data` was fetched ahead of time,
+  // the chart rebuild happens while the board is off-screen and invisible,
+  // so nothing pops in half-drawn once it slides into view.
+  async playSlideTransition(nextPlant, data) {
+    const board = this.els.board;
+
+    board.classList.add('tv-slide-out');
+    await tvWait(TV_SLIDE_MS);
+
+    // Jump instantly to the staging position on the right (no transition),
+    // then swap the content in while it's off-screen.
+    board.classList.remove('tv-slide-out');
+    board.classList.add('tv-slide-prep');
+    void board.offsetWidth; // flush styles so 'transition: none' applies before the jump
 
     this.els.plantSelect.value = nextPlant;
     localStorage.setItem(TV_PLANT_KEY, nextPlant);
-    await this.refresh();
+    if (data) {
+      this.applyData(nextPlant, data.rows, data.dates, data.h1);
+    } else {
+      await this.refresh();
+    }
 
-    this.els.board.classList.remove('tv-fading');
+    void board.offsetWidth; // flush again so removing tv-slide-prep animates back in
+
+    board.classList.remove('tv-slide-prep');
+    await tvWait(TV_SLIDE_MS);
   },
 
   async refresh() {
@@ -171,17 +286,7 @@ const TvBoard = {
     this.loading = true;
 
     const plant = this.els.plantSelect.value;
-    const dates = tvLast7DatesEndingYesterday();
-    const h1 = dates[dates.length - 1];
-
-    this.els.dateH1.textContent = formatShortDate(h1);
-    this.els.barPlantLabel.textContent = plant;
-
-    const res = await Api.getDashboardData({
-      startDate: dates[0],
-      endDate: h1,
-      plant: [plant]
-    });
+    const { res, dates, h1 } = await this.fetchPlantData(plant);
 
     this.loading = false;
 
@@ -190,10 +295,7 @@ const TvBoard = {
       return;
     }
 
-    this.els.lastUpdated.textContent = tvFormatClock(new Date());
-
-    this.renderBar(res.rows, plant, h1);
-    this.renderTrendAndRank(res.rows, plant, dates);
+    this.applyData(plant, res.rows, dates, h1);
   },
 
   renderBar(rows, plant, h1) {
