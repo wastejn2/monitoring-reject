@@ -1,0 +1,25 @@
+{
+  "name": "Monitoring Reject",
+  "short_name": "Mon. Reject",
+  "description": "Input & monitoring data reject produksi",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#3a0510",
+  "theme_color": "#7a0e22",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
