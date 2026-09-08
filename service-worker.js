@@ -1,7 +1,7 @@
 // Bump this number whenever any cached file changes — that's the ONLY edit
 // usually needed here. It forces every client to fetch fresh files instead
 // of serving stale ones from cache.
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.3.3';
 const CACHE_NAME = `monitoring-reject-${APP_VERSION}`;
 
 const APP_SHELL = [
