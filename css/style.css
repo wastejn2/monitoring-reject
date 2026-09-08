@@ -649,6 +649,7 @@ tbody tr:hover { background: var(--surface-soft); }
   flex-direction: column;
   gap: 18px;
   min-height: 0;
+  min-width: 0;
 }
 
 .tv-panel-bar .tv-bar-wrap { height: 380px; }
@@ -689,7 +690,7 @@ tbody tr:hover { background: var(--surface-soft); }
 
 .tv-page:fullscreen .tv-panel-bar { flex: 1.6 1 0; min-height: 0; display: flex; flex-direction: column; }
 .tv-page:fullscreen .tv-panel-rank { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
-.tv-page:fullscreen .tv-panel-trend { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.tv-page:fullscreen .tv-panel-trend { height: 100%; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 
 .tv-page:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; min-height: 0; height: auto; }
 
@@ -706,9 +707,9 @@ tbody tr:hover { background: var(--surface-soft); }
    up to 14) would otherwise squash every mini-chart into unreadable
    slivers, so past that point the list scrolls WITHIN this panel only —
    the outer page itself never gains a scrollbar. */
-.tv-page:fullscreen .tv-trend-grid { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
-.tv-page:fullscreen .tv-trend-item { flex: 1 1 0; min-height: 78px; display: flex; flex-direction: column; padding: 6px 12px 4px; }
-.tv-page:fullscreen .tv-trend-item-chart { flex: 1 1 auto; min-height: 0; height: auto; }
+.tv-page:fullscreen .tv-trend-grid { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overflow-x: hidden; }
+.tv-page:fullscreen .tv-trend-item { flex: 1 1 0; min-height: 78px; min-width: 0; display: flex; flex-direction: column; padding: 6px 12px 4px; }
+.tv-page:fullscreen .tv-trend-item-chart { flex: 1 1 auto; min-height: 0; min-width: 0; height: auto; }
 
 .tv-page:fullscreen .tv-panel-rank { flex: 0 0 auto; overflow: visible; }
 .tv-page:fullscreen .tv-rank-list { gap: 5px; }
@@ -777,7 +778,8 @@ tbody tr:hover { background: var(--surface-soft); }
   margin-bottom: 4px;
 }
 .tv-trend-item-stats b { color: var(--maroon-900); font-weight: 700; }
-.tv-trend-item-chart { position: relative; height: 62px; }
+.tv-trend-item-chart { position: relative; height: 62px; min-width: 0; overflow: hidden; }
+.tv-trend-item-chart canvas { max-width: 100%; }
 
 /* =========================================================
    ACCOUNTS PAGE
