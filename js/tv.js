@@ -80,6 +80,7 @@ const TvBoard = {
   cycleTimer: null,
   cyclePrefetchTimer: null,
   cycleActive: false,
+  autoRotateOn: false,
   loading: false,
   fullscreenBound: false,
   // Background-prefetch bookkeeping for the auto-cycle: data fetched ahead
@@ -102,7 +103,8 @@ const TvBoard = {
       emptyTrend: document.getElementById('tv-empty-trend'),
       board: document.getElementById('tv-board-body'),
       page: document.getElementById('page-tv'),
-      fullscreenBtn: document.getElementById('tv-fullscreen-btn')
+      fullscreenBtn: document.getElementById('tv-fullscreen-btn'),
+      autorotateBtn: document.getElementById('tv-autorotate-btn')
     };
 
     const plants = PLANT_ORDER.slice();
@@ -123,11 +125,14 @@ const TvBoard = {
     });
 
     this.els.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
+    this.els.autorotateBtn.addEventListener('click', () => this.toggleAutoRotate());
 
     if (!this.fullscreenBound) {
       document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
       this.fullscreenBound = true;
     }
+
+    this.updateAutoRotateBtn();
   },
 
   start() {
@@ -138,12 +143,19 @@ const TvBoard = {
 
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    // Leaving the TV page entirely — always fully stop, regardless of
+    // whether auto-rotate was on, so it starts clean next time.
+    this.autoRotateOn = false;
+    this.updateAutoRotateBtn();
     this.stopCycle();
   },
 
   toggleFullscreen() {
     if (!document.fullscreenElement) {
-      this.els.page.requestFullscreen().catch(() => toast('Browser ini tidak mendukung mode layar penuh.', 'error'));
+      // Not every mobile browser supports the Fullscreen API on an
+      // arbitrary element (iPhone Safari notably doesn't) — Auto-Ganti
+      // Plant works either way since it's no longer tied to fullscreen.
+      this.els.page.requestFullscreen().catch(() => toast('Browser ini tidak mendukung mode layar penuh. Coba tombol Auto-Ganti Plant saja.', 'error'));
     } else {
       document.exitFullscreen();
     }
@@ -152,11 +164,26 @@ const TvBoard = {
   onFullscreenChange() {
     const isFull = document.fullscreenElement === this.els.page;
     this.els.fullscreenBtn.textContent = isFull ? '⛶ Keluar Layar Penuh' : '⛶ Layar Penuh';
-    if (isFull) {
+    // Entering fullscreen turns auto-rotate on by default (the classic TV
+    // kiosk behavior). Exiting fullscreen no longer force-stops it — on a
+    // phone (no real fullscreen support) Auto-Ganti Plant is the only way
+    // to get rotation at all, so it has to keep running on its own.
+    if (isFull && !this.autoRotateOn) {
+      this.autoRotateOn = true;
+      this.updateAutoRotateBtn();
       this.startCycle();
-    } else {
-      this.stopCycle();
     }
+  },
+
+  toggleAutoRotate() {
+    this.autoRotateOn = !this.autoRotateOn;
+    this.updateAutoRotateBtn();
+    if (this.autoRotateOn) this.startCycle(); else this.stopCycle();
+  },
+
+  updateAutoRotateBtn() {
+    this.els.autorotateBtn.textContent = this.autoRotateOn ? '⏸ Auto-Ganti: Aktif' : '🔄 Auto-Ganti Plant';
+    this.els.autorotateBtn.classList.toggle('active', this.autoRotateOn);
   },
 
   startCycle() {
