@@ -34,6 +34,7 @@ const App = {
     TvBoard.init();
     HistoryPage.init();
     initHamburgerNav((target) => this.handleNavigate(target));
+    initPasswordToggles();
     this.initVersionBadge();
 
     const user = Session.getUser();
