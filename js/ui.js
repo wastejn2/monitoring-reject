@@ -48,6 +48,22 @@ function hideMessage(el) {
   el.hidden = true;
 }
 
+// ---------- password show/hide toggles (login, register, change-password) ----------
+// Wired once at startup since every password field already exists statically
+// in the DOM (nothing here is created dynamically later).
+function initPasswordToggles() {
+  document.querySelectorAll('.btn-toggle-password').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      if (!input) return;
+      const willShow = input.type === 'password';
+      input.type = willShow ? 'text' : 'password';
+      btn.textContent = willShow ? 'Sembunyikan' : 'Lihat';
+      btn.setAttribute('aria-label', willShow ? 'Sembunyikan password' : 'Tampilkan password');
+    });
+  });
+}
+
 // ---------- hamburger nav drawer (auto-closes itself) ----------
 function initHamburgerNav(onNavigate) {
   const hamburger = document.getElementById('btn-hamburger');
