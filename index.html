@@ -322,10 +322,18 @@
 
         <div class="tv-board-body" id="tv-board-body">
           <div class="tv-main-row">
-            <div class="card tv-panel tv-panel-bar">
-              <h2 class="card-title">Reject per Shift — <span id="tv-bar-plant-label"></span></h2>
-              <div class="chart-wrap tv-bar-wrap"><canvas id="tv-chart-bar"></canvas></div>
-              <div class="empty-state" id="tv-empty-bar" hidden>Belum ada data H-1 untuk plant ini.</div>
+            <div class="tv-left-col">
+              <div class="card tv-panel tv-panel-bar">
+                <h2 class="card-title">Reject per Shift — <span id="tv-bar-plant-label"></span></h2>
+                <div class="chart-wrap tv-bar-wrap"><canvas id="tv-chart-bar"></canvas></div>
+                <div class="empty-state" id="tv-empty-bar" hidden>Belum ada data H-1 untuk plant ini.</div>
+              </div>
+
+              <div class="card tv-panel tv-panel-rank">
+                <h2 class="card-title">Top Rank Reject (Rata-rata Sesuai Hari Ada Data)</h2>
+                <div class="tv-rank-list" id="tv-rank-list"></div>
+                <div class="empty-state" id="tv-empty-rank" hidden>Belum ada data 7 hari terakhir.</div>
+              </div>
             </div>
 
             <div class="card tv-panel tv-panel-trend">
@@ -333,12 +341,6 @@
               <div class="tv-trend-grid" id="tv-trend-grid"></div>
               <div class="empty-state" id="tv-empty-trend" hidden>Belum ada data 7 hari terakhir.</div>
             </div>
-          </div>
-
-          <div class="card tv-panel tv-panel-rank">
-            <h2 class="card-title">Top Rank Reject (Rata-rata Sesuai Hari Ada Data)</h2>
-            <div class="tv-rank-list" id="tv-rank-list"></div>
-            <div class="empty-state" id="tv-empty-rank" hidden>Belum ada data 7 hari terakhir.</div>
           </div>
         </div>
       </section>
