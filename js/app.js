@@ -10,6 +10,18 @@ const PAGE_TITLES = {
   accounts: 'Kelola Akun'
 };
 
+// Which pages each role is allowed to reach — admin sees everything, operator
+// gets Input + Dashboard + TV, visitor is read-only (Dashboard + TV only, no
+// Input, no account management).
+const ROLE_PAGES = {
+  admin: ['input', 'dashboard', 'tv', 'accounts'],
+  operator: ['input', 'dashboard', 'tv'],
+  visitor: ['dashboard', 'tv']
+};
+// First page to land on for a role that isn't allowed on "input" (the
+// hard-coded default in the nav's markup) — Dashboard is always allowed.
+const ROLE_HOME_PAGE = { admin: 'input', operator: 'input', visitor: 'dashboard' };
+
 const App = {
   currentPage: 'input',
 
@@ -114,12 +126,18 @@ const App = {
     document.getElementById('view-auth').hidden = true;
     document.getElementById('view-app').hidden = false;
     document.getElementById('current-username').textContent = user ? user.username : '-';
-    document.getElementById('nav-role-badge').textContent = user ? user.role : 'user';
 
-    const isAdmin = user && user.role === 'admin';
-    document.getElementById('nav-accounts').hidden = !isAdmin;
+    const role = (user && ROLE_PAGES[user.role]) ? user.role : 'visitor';
+    document.getElementById('nav-role-badge').textContent = (typeof ROLE_LABELS !== 'undefined' && ROLE_LABELS[role]) || role;
 
-    this.goToPage('dashboard');
+    // Show only the nav items this role is allowed to open — Input Data is
+    // hidden for visitor, Kelola Akun only ever shows for admin.
+    const allowed = ROLE_PAGES[role];
+    document.querySelectorAll('.nav-item[data-target]').forEach((btn) => {
+      btn.hidden = allowed.indexOf(btn.dataset.target) === -1;
+    });
+
+    this.goToPage(allowed.indexOf('dashboard') !== -1 ? 'dashboard' : allowed[0]);
   },
 
   handleNavigate(target) {
@@ -128,7 +146,8 @@ const App = {
 
   goToPage(target) {
     const user = Session.getUser();
-    if (target === 'accounts' && !(user && user.role === 'admin')) target = 'input';
+    const role = (user && ROLE_PAGES[user.role]) ? user.role : 'visitor';
+    if (ROLE_PAGES[role].indexOf(target) === -1) target = ROLE_HOME_PAGE[role] || 'dashboard';
 
     if (this.currentPage === 'tv' && target !== 'tv') TvBoard.stop();
 
