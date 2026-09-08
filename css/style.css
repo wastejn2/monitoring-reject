@@ -633,11 +633,22 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-board-body { transition: opacity 0.32s var(--ease); opacity: 1; }
 .tv-board-body.tv-fading { opacity: 0; }
 
+/* Left column (bar chart on top, rank strip below it) sits next to the
+   trend stack, which spans the FULL height of both stacked on the left —
+   this is what keeps the trend mini-charts tall enough to actually show
+   their shape instead of flattening out, and keeps the rank card's width
+   matched to the bar chart above it instead of stretching edge-to-edge. */
 .tv-main-row {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
+}
+.tv-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
 }
 
 .tv-panel-bar .tv-bar-wrap { height: 380px; }
@@ -647,8 +658,8 @@ tbody tr:hover { background: var(--surface-soft); }
    Everything below only kicks in while :fullscreen — the normal, in-app
    page view above stays a plain scrollable page. In fullscreen the whole
    board is squeezed to exactly one screen (no scrollbar): a fixed-height
-   controls row on top, the bar chart + trend stack sharing the remaining
-   height in the middle, and a compact rank strip pinned to the bottom.
+   controls row on top, then the bar+rank column and the trend stack share
+   the remaining height, each column stretching to fill it fully.
    ========================================================= */
 
 .tv-page:fullscreen {
@@ -668,22 +679,26 @@ tbody tr:hover { background: var(--surface-soft); }
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
 .tv-page:fullscreen .tv-main-row { flex: 1 1 auto; min-height: 0; }
+.tv-page:fullscreen .tv-left-col { min-height: 0; gap: 12px; }
 
 .tv-page:fullscreen .card { padding: 14px 18px; margin-bottom: 0; }
 .tv-page:fullscreen .card-title { margin-bottom: 8px; font-size: 15px; }
 
-.tv-page:fullscreen .tv-panel-bar,
-.tv-page:fullscreen .tv-panel-trend {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
+.tv-page:fullscreen .tv-panel-bar { flex: 1.6 1 0; min-height: 0; display: flex; flex-direction: column; }
+.tv-page:fullscreen .tv-panel-rank { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.tv-page:fullscreen .tv-panel-trend { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
 .tv-page:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; min-height: 0; height: auto; }
+
+.tv-page:fullscreen .tv-rank-list { gap: 5px; }
+.tv-page:fullscreen .tv-rank-row { padding: 6px 12px; }
+.tv-page:fullscreen .tv-rank-pos { width: 28px; height: 28px; font-size: 13px; }
+.tv-page:fullscreen .tv-rank-line { font-size: 13px; }
+.tv-page:fullscreen .tv-rank-total { font-size: 10.5px; }
+.tv-page:fullscreen .tv-rank-avg-value { font-size: 16px; }
 
 /* Each trend item grows to fill the available height when there aren't
    many Lines (the common case — 1112/1113 only ever have 5) but never
@@ -692,7 +707,7 @@ tbody tr:hover { background: var(--surface-soft); }
    slivers, so past that point the list scrolls WITHIN this panel only —
    the outer page itself never gains a scrollbar. */
 .tv-page:fullscreen .tv-trend-grid { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
-.tv-page:fullscreen .tv-trend-item { flex: 1 1 0; min-height: 56px; display: flex; flex-direction: column; padding: 6px 12px 4px; }
+.tv-page:fullscreen .tv-trend-item { flex: 1 1 0; min-height: 78px; display: flex; flex-direction: column; padding: 6px 12px 4px; }
 .tv-page:fullscreen .tv-trend-item-chart { flex: 1 1 auto; min-height: 0; height: auto; }
 
 .tv-page:fullscreen .tv-panel-rank { flex: 0 0 auto; overflow: visible; }
