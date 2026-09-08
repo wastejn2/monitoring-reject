@@ -383,9 +383,20 @@ const TvBoard = {
           x: {
             grid: { display: false },
             ticks: {
-              font: { size: 13, weight: '700' },
+              // Never let Chart.js auto-rotate these — a slanted two-line
+              // label reads badly on a narrow phone. Instead, drop straight
+              // to a compact single-line label (just the Line name) once
+              // there isn't enough room per category for the full
+              // "Line X / Total: Y Kg" version, and let autoSkip (still on
+              // by default) thin out labels rather than overlap them.
+              maxRotation: 0,
+              minRotation: 0,
+              autoSkipPadding: 6,
+              font: { size: 12, weight: '700' },
               color: '#3a0510',
               callback: function (value, index) {
+                const perCategoryWidth = this.chart.width / activeLines.length;
+                if (perCategoryWidth < 110) return activeLines[index];
                 const total = totals[index];
                 return [activeLines[index], `Total: ${formatNumberID(total, 1)} Kg`];
               }
@@ -516,7 +527,7 @@ const TvBoard = {
               }
             },
             scales: {
-              x: { grid: { display: false }, ticks: { font: { size: 9.5 } } },
+              x: { grid: { display: false }, ticks: { maxRotation: 0, minRotation: 0, font: { size: 9.5 } } },
               y: { display: false }
             }
           }
