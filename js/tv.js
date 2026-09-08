@@ -35,7 +35,12 @@ function tvProductionToday() {
 function tvIsoDateDaysAgo(days) {
   const d = tvProductionToday();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  // Local y/m/d, not d.toISOString() — see toLocalISODate() in
+  // dashboard.js for why: toISOString() is UTC-based, and WIB (UTC+7)
+  // being ahead of UTC means any local time before 07:00 is still
+  // "yesterday" in UTC, which would silently subtract an extra day on
+  // top of the shift-rollover adjustment above.
+  return toLocalISODate(d);
 }
 function tvLast7DatesEndingYesterday() {
   const arr = [];
