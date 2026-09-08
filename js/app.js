@@ -19,6 +19,7 @@ const App = {
     Dashboard.init();
     TvBoard.init();
     initHamburgerNav((target) => this.handleNavigate(target));
+    this.initVersionBadge();
 
     const user = Session.getUser();
     const token = Session.getToken();
@@ -27,6 +28,79 @@ const App = {
     } else {
       this.showAuth();
     }
+  },
+
+  // Nav-drawer version label: reads APP_VERSION straight from whichever
+  // service worker is currently controlling the page (see the 'message'
+  // handler in service-worker.js), so it can never drift out of sync with
+  // the actual cached version like a hand-copied number could. Tapping it
+  // re-checks GitHub Pages for a newer service-worker.js and, if one is
+  // found and takes over, reloads automatically.
+  initVersionBadge() {
+    const btn = document.getElementById('nav-version-btn');
+    const label = document.getElementById('nav-version-text');
+    if (!btn || !label || !('serviceWorker' in navigator)) {
+      if (btn) btn.hidden = true;
+      return;
+    }
+
+    const askControllerForVersion = () => new Promise((resolve) => {
+      if (!navigator.serviceWorker.controller) { resolve(null); return; }
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => resolve(null), 1500);
+      channel.port1.onmessage = (e) => {
+        clearTimeout(timer);
+        resolve(e.data && e.data.version);
+      };
+      navigator.serviceWorker.controller.postMessage({ type: 'GET_VERSION' }, [channel.port2]);
+    });
+
+    const showVersion = async () => {
+      const version = await askControllerForVersion();
+      label.textContent = version ? `Versi ${version}` : 'Versi —';
+    };
+
+    // The controller may not exist yet on a brand-new install until it
+    // claims this page, so ask again once that happens.
+    showVersion();
+    navigator.serviceWorker.addEventListener('controllerchange', showVersion);
+
+    btn.addEventListener('click', async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) { toast('Service worker belum aktif.', 'error'); return; }
+
+      btn.classList.add('checking');
+      label.textContent = 'Mengecek update…';
+
+      let updateFound = false;
+      const onUpdateFound = () => {
+        updateFound = true;
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'activated') {
+            toast('Update ditemukan, memuat ulang…', 'success');
+            setTimeout(() => window.location.reload(), 700);
+          }
+        });
+      };
+      reg.addEventListener('updatefound', onUpdateFound);
+
+      try {
+        await reg.update();
+      } catch (e) {
+        // ignore — handled by the timeout fallback below
+      }
+
+      setTimeout(() => {
+        reg.removeEventListener('updatefound', onUpdateFound);
+        btn.classList.remove('checking');
+        if (!updateFound) {
+          toast('Sudah pakai versi terbaru.', 'info');
+          showVersion();
+        }
+      }, 2500);
+    });
   },
 
   showAuth() {
