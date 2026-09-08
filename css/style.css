@@ -404,6 +404,29 @@ button, input, select {
 .nav-logout { color: #ffd7dd; }
 .nav-logout:hover { background: rgba(230, 57, 90, 0.25); }
 
+.nav-version {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 8px 4px;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  background: none;
+  color: rgba(255,255,255,0.5);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.18s var(--ease);
+}
+.nav-version:hover { color: rgba(255,255,255,0.9); }
+.nav-version-icon { font-size: 13px; display: inline-block; transition: transform 0.25s var(--ease); }
+.nav-version.checking .nav-version-icon { animation: navVersionSpin 0.8s linear infinite; }
+@keyframes navVersionSpin { to { transform: rotate(360deg); } }
+
 .content {
   max-width: 1180px;
   margin: 0 auto;
