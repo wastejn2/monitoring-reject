@@ -178,6 +178,14 @@ function mapAuthError(code) {
 }
 
 // ---------- Accounts page (admin only) ----------
+const ROLE_LABELS = { admin: 'Admin', operator: 'Operator', visitor: 'Visitor' };
+
+function roleSelectHtml(selected) {
+  return Object.keys(ROLE_LABELS)
+    .map((r) => `<option value="${r}" ${r === selected ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`)
+    .join('');
+}
+
 const AccountsPage = {
   async load() {
     const pendingList = document.getElementById('pending-list');
@@ -212,15 +220,17 @@ const AccountsPage = {
         <div class="acc-meta">Daftar: ${escapeHtml(u.createdAt || '-')}</div>
       </div>
       <div class="acc-actions">
+        <select class="role-select" data-user="${escapeHtml(u.username)}">${roleSelectHtml(u.role || 'operator')}</select>
         <button class="btn-approve" data-user="${escapeHtml(u.username)}">Setujui</button>
         <button class="btn-deny" data-user="${escapeHtml(u.username)}">Tolak</button>
       </div>
     `;
     row.querySelector('.btn-approve').addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
-      const res = await Api.approveUser(u.username);
+      const role = row.querySelector('.role-select').value;
+      const res = await Api.approveUser(u.username, role);
       if (res.ok) {
-        toast(`Akun "${u.username}" disetujui.`, 'success');
+        toast(`Akun "${u.username}" disetujui sebagai ${ROLE_LABELS[role]}.`, 'success');
         AccountsPage.load();
       } else {
         toast('Gagal menyetujui akun.', 'error');
@@ -245,14 +255,31 @@ const AccountsPage = {
     const row = document.createElement('div');
     row.className = 'account-row';
     const statusBadge = `<span class="badge badge-${u.status}">${u.status}</span>`;
-    const roleBadge = u.role === 'admin' ? '<span class="badge badge-admin">admin</span>' : '';
     row.innerHTML = `
       <div>
-        <div class="acc-name">${escapeHtml(u.username)} ${roleBadge}</div>
+        <div class="acc-name">${escapeHtml(u.username)}</div>
         <div class="acc-meta">Dibuat: ${escapeHtml(u.createdAt || '-')}</div>
       </div>
-      ${statusBadge}
+      <div class="acc-actions">
+        ${statusBadge}
+        <select class="role-select" data-user="${escapeHtml(u.username)}" ${u.status !== 'approved' ? 'disabled' : ''}>${roleSelectHtml(u.role)}</select>
+      </div>
     `;
+    const select = row.querySelector('.role-select');
+    if (u.status === 'approved') {
+      select.addEventListener('change', async () => {
+        const newRole = select.value;
+        select.disabled = true;
+        const res = await Api.setUserRole(u.username, newRole);
+        select.disabled = false;
+        if (res.ok) {
+          toast(`Role "${u.username}" diubah jadi ${ROLE_LABELS[newRole]}.`, 'success');
+        } else {
+          toast('Gagal mengubah role.', 'error');
+          select.value = u.role; // revert the dropdown on failure
+        }
+      });
+    }
     return row;
   }
 };
