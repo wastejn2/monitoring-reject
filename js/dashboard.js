@@ -3,17 +3,21 @@
  * bar chart (reject per line), trend line chart, and a detail table.
  */
 
-function allDivisiOptions() {
-  return Object.keys(LINE_CONFIG);
-}
 function allPlantOptions() {
-  const set = new Set();
-  Object.values(LINE_CONFIG).forEach((plants) => Object.keys(plants).forEach((p) => set.add(p)));
-  return Array.from(set);
+  return PLANT_ORDER.slice();
 }
 function allLineOptions() {
   const set = new Set();
-  Object.values(LINE_CONFIG).forEach((plants) => Object.values(plants).forEach((lines) => lines.forEach((l) => set.add(l))));
+  Object.values(PLANT_CONFIG).forEach((lines) => lines.forEach((l) => set.add(l)));
+  return Array.from(set).sort();
+}
+
+// Line options narrow down to only what's possible for the selected Plant(s)
+// (all Plants if none picked yet) — same cascade idea as the input form.
+function lineOptionsForPlant(selectedPlant) {
+  const plantList = selectedPlant && selectedPlant.length ? selectedPlant : allPlantOptions();
+  const set = new Set();
+  plantList.forEach((p) => (PLANT_CONFIG[p] || []).forEach((l) => set.add(l)));
   return Array.from(set).sort();
 }
 
@@ -41,7 +45,7 @@ function colorForRatio(t) {
 function aggregateByLine(rows) {
   const map = new Map();
   rows.forEach((r) => {
-    if (!map.has(r.line)) map.set(r.line, { line: r.line, divisi: r.divisi, plant: r.plant, output: 0, reject: 0 });
+    if (!map.has(r.line)) map.set(r.line, { line: r.line, plant: r.plant, output: 0, reject: 0 });
     const entry = map.get(r.line);
     entry.output += Number(r.output) || 0;
     entry.reject += Number(r.reject) || 0;
@@ -66,7 +70,6 @@ function aggregateByDate(rows) {
 }
 
 const Dashboard = {
-  msDivisi: null,
   msPlant: null,
   msLine: null,
   barChart: null,
@@ -93,17 +96,23 @@ const Dashboard = {
     this.els.end.value = isoDateDaysAgo(0);
     this.els.start.value = isoDateDaysAgo(13);
 
-    this.msDivisi = createMultiSelect(document.getElementById('ms-divisi'), allDivisiOptions());
     this.msPlant = createMultiSelect(document.getElementById('ms-plant'), allPlantOptions());
     this.msLine = createMultiSelect(document.getElementById('ms-line'), allLineOptions());
+
+    // Line narrows down to the selected Plant(s) — same cascade idea as the
+    // input form.
+    this.msPlant.onChange((selectedPlant) => {
+      this.msLine.setOptions(lineOptionsForPlant(selectedPlant));
+    });
 
     this.els.applyBtn.addEventListener('click', () => this.refresh());
     this.els.resetBtn.addEventListener('click', () => {
       this.els.end.value = isoDateDaysAgo(0);
       this.els.start.value = isoDateDaysAgo(13);
-      this.msDivisi.reset();
       this.msPlant.reset();
+      this.msPlant.setOptions(allPlantOptions());
       this.msLine.reset();
+      this.msLine.setOptions(allLineOptions());
       this.refresh();
     });
   },
@@ -113,7 +122,6 @@ const Dashboard = {
     const res = await Api.getDashboardData({
       startDate: this.els.start.value,
       endDate: this.els.end.value,
-      divisi: this.msDivisi.getSelected(),
       plant: this.msPlant.getSelected(),
       line: this.msLine.getSelected()
     });
@@ -253,7 +261,6 @@ const Dashboard = {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${escapeHtml(e.line)}</td>
-        <td>${escapeHtml(e.divisi)}</td>
         <td>${escapeHtml(e.plant)}</td>
         <td>${formatNumberID(e.output, 2)}</td>
         <td>${formatNumberID(e.reject, 2)}</td>
