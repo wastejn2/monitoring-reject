@@ -497,7 +497,32 @@ button, input, select {
   font-weight: 700;
   color: var(--maroon-900);
 }
-.card-title-row { display: flex; align-items: center; justify-content: space-between; }
+.card-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+
+.chart-hint { font-size: 11.5px; color: var(--text-muted); margin: -10px 0 14px; }
+
+/* ---------- small segmented toggle (e.g. Per Line / Per Plant) ---------- */
+.seg-group {
+  display: inline-flex;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.seg-btn {
+  background: var(--surface-soft);
+  color: var(--maroon-800);
+  border: none;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.seg-btn + .seg-btn { border-left: 1.5px solid var(--border); }
+.seg-btn:hover { background: #f5e6e8; }
+.seg-btn.active { background: linear-gradient(135deg, var(--maroon-700), var(--red-500)); color: #fff; }
 
 .form-card { max-width: 880px; margin-left: auto; margin-right: auto; }
 
