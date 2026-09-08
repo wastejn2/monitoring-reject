@@ -21,10 +21,19 @@ function lineOptionsForPlant(selectedPlant) {
   return Array.from(set).sort();
 }
 
+// NOTE: deliberately NOT using d.toISOString() here — that formats in UTC,
+// and since WIB is UTC+7, any local time between 00:00-06:59 is still
+// "yesterday" in UTC, silently pushing every date back by one extra day
+// during those hours. Format from the LOCAL y/m/d fields instead so the
+// result always matches the calendar date shown on the device's own clock.
+function toLocalISODate(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 function isoDateDaysAgo(days) {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return toLocalISODate(d);
 }
 
 // low -> mid -> high color ramp, kept inside the maroon/gold palette
