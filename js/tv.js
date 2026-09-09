@@ -100,17 +100,48 @@ function tvFormatClock(d) {
 // The max end is kept modest on purpose: unlike the trend/rank panels
 // (which scroll internally if their content doesn't fit), this bar chart
 // has no scroll fallback — Bos wants it to stay small enough to always show
-// every Line's bar and its "Total: X Kg" tick label in full on one screen,
-// rather than text so big it gets clipped off the bottom.
-function tvBarDecorationsPlugin(shiftLabels) {
+// every Line's bar and its per-shift value in full on one screen, rather
+// than text so big it gets clipped off the bottom.
+//
+// In Mode Scroll specifically, Bos asked for a different arrangement (the
+// compact/dense layout keeps the original one): the per-Line Total moves
+// OFF the x-axis tick label and is instead drawn big, above that Line's
+// tallest bar; the Line name tick label itself also gets bigger; and the
+// per-shift value on each bar gets a bit bigger too, but stays smaller
+// than the Total text — Total > Line name > per-shift value > shift tag.
+// TvBoard.scrollModeOn is read live (not passed in at chart-creation time)
+// so this keeps working correctly across Mode Scroll toggling without
+// needing to recreate the chart — same trick the font-scaling already uses.
+function tvBarDecorationsPlugin(shiftLabels, totals) {
   return {
     id: 'tvBarDecorations',
+    // Mode Scroll's big "Total" text (drawn in afterDatasetsDraw below)
+    // needs headroom above the tallest bar + its value label, on top of
+    // the padding the per-bar value label already needs — reserve it here,
+    // before layout runs, so the chart area shrinks to make room instead
+    // of the Total text getting clipped at the top of the canvas.
+    beforeLayout(chart) {
+      const h = chart.height || 300;
+      chart.options.layout.padding.top = TvBoard.scrollModeOn
+        ? Math.round(Math.max(55, Math.min(95, h / 8)))
+        : 22;
+    },
     afterDatasetsDraw(chart) {
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 300;
-      const valueFontPx = Math.round(Math.max(11.5, Math.min(20, areaH / 40)));
+      const isScroll = TvBoard.scrollModeOn;
+      const valueFontPx = isScroll
+        ? Math.round(Math.max(16, Math.min(28, areaH / 30)))
+        : Math.round(Math.max(11.5, Math.min(20, areaH / 40)));
       const tagFontPx = Math.round(Math.max(10, Math.min(15, areaH / 55)));
       const tagMinBarHeight = Math.max(22, tagFontPx * 2);
+      const totalFontPx = Math.round(Math.max(22, Math.min(36, areaH / 20)));
+
+      // Tracks, per category (x-axis index), the topmost pixel any value
+      // label reached — so the big Total text (Mode Scroll only) can be
+      // drawn above whichever of the 3 shift bars is tallest, never
+      // overlapping the value label already sitting on top of it.
+      const categoryTopY = new Map();
 
       chart.data.datasets.forEach((dataset, dsIndex) => {
         const meta = chart.getDatasetMeta(dsIndex);
@@ -124,7 +155,12 @@ function tvBarDecorationsPlugin(shiftLabels) {
           ctx.textAlign = 'center';
           ctx.fillStyle = '#3a0510';
           ctx.font = `700 ${valueFontPx}px "Segoe UI", sans-serif`;
-          ctx.fillText(formatNumberID(value, 1), bar.x, bar.y - Math.max(6, valueFontPx * 0.5));
+          const labelY = bar.y - Math.max(6, valueFontPx * 0.5);
+          ctx.fillText(formatNumberID(value, 1), bar.x, labelY);
+
+          const labelTop = labelY - valueFontPx;
+          const prevTop = categoryTopY.get(index);
+          if (prevTop === undefined || labelTop < prevTop) categoryTopY.set(index, labelTop);
 
           if (barHeight > tagMinBarHeight) {
             ctx.fillStyle = dsIndex === 0 ? '#3a0510' : '#ffffff';
@@ -134,6 +170,22 @@ function tvBarDecorationsPlugin(shiftLabels) {
           ctx.restore();
         });
       });
+
+      if (isScroll && totals) {
+        const xScale = chart.scales.x;
+        totals.forEach((total, index) => {
+          if (!total) return;
+          const top = categoryTopY.get(index);
+          if (top === undefined) return;
+          const x = xScale.getPixelForTick(index);
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#3a0510';
+          ctx.font = `800 ${totalFontPx}px "Segoe UI", sans-serif`;
+          ctx.fillText(`Total: ${formatNumberID(total, 1)} Kg`, x, top - 12);
+          ctx.restore();
+        });
+      }
     }
   };
 }
@@ -169,8 +221,10 @@ const TvBoard = {
       barCanvas: document.getElementById('tv-chart-bar'),
       emptyBar: document.getElementById('tv-empty-bar'),
       rankList: document.getElementById('tv-rank-list'),
+      rankPlantLabel: document.getElementById('tv-rank-plant-label'),
       emptyRank: document.getElementById('tv-empty-rank'),
       trendGrid: document.getElementById('tv-trend-grid'),
+      trendPlantLabel: document.getElementById('tv-trend-plant-label'),
       emptyTrend: document.getElementById('tv-empty-trend'),
       board: document.getElementById('tv-board-body'),
       page: document.getElementById('page-tv'),
@@ -632,6 +686,8 @@ const TvBoard = {
   applyData(plant, rows, dates, h1) {
     this.els.dateH1.textContent = formatShortDate(h1);
     this.els.barPlantLabel.textContent = plant;
+    this.els.trendPlantLabel.textContent = plant;
+    this.els.rankPlantLabel.textContent = plant;
     this.els.lastUpdated.textContent = tvFormatClock(new Date());
     this.renderBar(rows, plant, h1);
     this.renderTrendAndRank(rows, plant, dates);
@@ -795,10 +851,18 @@ const TvBoard = {
               // than one screen and getting clipped off the bottom.
               font: (ctx) => {
                 const h = (ctx.chart.chartArea && ctx.chart.chartArea.height) || 300;
+                if (TvBoard.scrollModeOn) {
+                  // Mode Scroll: the Line name is now the only tick label
+                  // (Total moved to the big canvas-drawn text above the
+                  // bars), so it can afford to be large and easy to read
+                  // from across the room.
+                  return { size: Math.round(Math.max(20, Math.min(32, h / 22))), weight: '800' };
+                }
                 return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
               color: '#3a0510',
               callback: function (value, index) {
+                if (TvBoard.scrollModeOn) return activeLines[index];
                 const perCategoryWidth = this.chart.width / activeLines.length;
                 if (perCategoryWidth < 110) return activeLines[index];
                 const total = totals[index];
@@ -809,7 +873,7 @@ const TvBoard = {
           y: { display: false }
         }
       },
-      plugins: [tvBarDecorationsPlugin(shiftLabels)]
+      plugins: [tvBarDecorationsPlugin(shiftLabels, totals)]
     });
   },
 
