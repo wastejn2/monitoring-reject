@@ -500,6 +500,7 @@ button, input, select {
 .card-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 
 .chart-hint { font-size: 11.5px; color: var(--text-muted); margin: -10px 0 14px; }
+.chart-controls-row { display: flex; flex-wrap: wrap; gap: 10px; margin: -8px 0 14px; }
 
 /* ---------- small segmented toggle (e.g. Per Line / Per Plant) ---------- */
 .seg-group {
