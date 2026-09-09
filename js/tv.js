@@ -414,20 +414,41 @@ const TvBoard = {
   // position with no transition, gets revealed, and animates up into place.
   // Mirrors the existing Plant-to-Plant playSlideTransition() below — same
   // out/prep/in shape, just vertical instead of horizontal.
+  //
+  // EXCEPT for the trend panel, which is always swapped instantly instead —
+  // profiling a stutter reported right before entering rank traced it to
+  // this exact transform animation: trend can hold up to 14 Chart.js
+  // canvases, and animating a transform on that subtree forces the browser
+  // to promote it onto a fresh GPU compositing layer and rasterize it,
+  // which was expensive enough to visibly stall the transition's first
+  // frames. Bar and rank have at most one canvas (or none), so animating
+  // THEM stays cheap — whichever of the two isn't trend still gets the
+  // normal slide, so the transition still reads as continuous motion, just
+  // with trend itself popping in/out instantly rather than sliding.
   async playScrollSlideTransition(fromKey, toKey) {
     const fromEl = this.els.scrollSlideEls[fromKey];
     const toEl = this.els.scrollSlideEls[toKey];
+    const fromIsHeavy = fromKey === 'trend';
+    const toIsHeavy = toKey === 'trend';
 
-    fromEl.classList.add('tv-scroll-out');
-    await tvWait(TV_SCROLL_TRANSITION_MS);
-    fromEl.classList.remove('tv-scroll-out');
-    fromEl.classList.add('tv-scroll-hide');
+    if (fromIsHeavy) {
+      fromEl.classList.add('tv-scroll-hide');
+    } else {
+      fromEl.classList.add('tv-scroll-out');
+      await tvWait(TV_SCROLL_TRANSITION_MS);
+      fromEl.classList.remove('tv-scroll-out');
+      fromEl.classList.add('tv-scroll-hide');
+    }
 
-    toEl.classList.remove('tv-scroll-hide');
-    toEl.classList.add('tv-scroll-prep');
-    void toEl.offsetWidth; // flush styles so 'transition: none' applies before the jump
-    toEl.classList.remove('tv-scroll-prep');
-    await tvWait(TV_SCROLL_TRANSITION_MS);
+    if (toIsHeavy) {
+      toEl.classList.remove('tv-scroll-hide');
+    } else {
+      toEl.classList.remove('tv-scroll-hide');
+      toEl.classList.add('tv-scroll-prep');
+      void toEl.offsetWidth; // flush styles so 'transition: none' applies before the jump
+      toEl.classList.remove('tv-scroll-prep');
+      await tvWait(TV_SCROLL_TRANSITION_MS);
+    }
   },
 
   // Decides how long the current slide stays up. The bar slide (no
