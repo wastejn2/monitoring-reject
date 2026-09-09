@@ -150,6 +150,7 @@ const Dashboard = {
   loaded: false,
   barGroupBy: 'line', // 'line' | 'plant' — which grouping the comparison chart shows
   shiftDetailOn: false, // off (default) = original single Total-per-category bar; on = per-shift breakdown like the TV board
+  shiftFilter: 'all', // 'all' | '1' | '2' | '3' — only matters while shiftDetailOn is true
   lastRows: [],
 
   init() {
@@ -166,6 +167,8 @@ const Dashboard = {
       barHint: document.getElementById('chart-bar-hint'),
       barGroupButtons: Array.from(document.querySelectorAll('#bar-groupby-toggle .seg-btn')),
       barDetailButtons: Array.from(document.querySelectorAll('#bar-detail-toggle .seg-btn')),
+      barShiftToggle: document.getElementById('bar-shift-toggle'),
+      barShiftButtons: Array.from(document.querySelectorAll('#bar-shift-toggle .seg-btn')),
       trendCanvas: document.getElementById('chart-trend'),
       emptyBar: document.getElementById('empty-bar'),
       emptyTrend: document.getElementById('empty-trend'),
@@ -191,6 +194,19 @@ const Dashboard = {
         if (wantsOn === this.shiftDetailOn) return;
         this.shiftDetailOn = wantsOn;
         this.els.barDetailButtons.forEach((b) => b.classList.toggle('active', b === btn));
+        // The Shift 1/2/3/Semua sub-filter only makes sense once Detail per
+        // Shift is on — hidden the rest of the time so it's not shown
+        // controlling a chart mode it has no effect on.
+        this.els.barShiftToggle.hidden = !wantsOn;
+        this.updateBarChart();
+      });
+    });
+
+    this.els.barShiftButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.shift === this.shiftFilter) return;
+        this.shiftFilter = btn.dataset.shift;
+        this.els.barShiftButtons.forEach((b) => b.classList.toggle('active', b === btn));
         this.updateBarChart();
       });
     });
@@ -277,21 +293,36 @@ const Dashboard = {
 
     let datasets, shiftTags, xTicks;
     if (this.shiftDetailOn) {
-      // Detail per Shift -> one dataset per shift, colored/tagged just like
-      // the TV board's chart. That breakdown loses the at-a-glance combined
-      // total each single-bar view used to show, so it comes back as a
-      // second line under the category name on the x-axis — same trick the
-      // TV board's own chart uses for the same reason.
-      datasets = ['1', '2', '3'].map((shiftKey) => ({
-        label: SHIFT_LABELS[shiftKey],
-        data: items.map((e) => Number((e.shift[shiftKey] || 0).toFixed(3))),
-        backgroundColor: SHIFT_COLORS[shiftKey],
-        borderRadius: 5,
-        maxBarThickness: 50,
-        barPercentage: 0.98,
-        categoryPercentage: 0.82
-      }));
-      shiftTags = ['S1', 'S2', 'S3'];
+      // Detail per Shift -> either one dataset per shift (Semua Shift,
+      // colored/tagged just like the TV board's chart) or a single dataset
+      // in that one shift's own color (Shift 1/2/3). Either way this
+      // breakdown loses the at-a-glance combined total the plain single-bar
+      // view used to show, so it comes back as a second line under the
+      // category name on the x-axis — same trick the TV board's own chart
+      // uses for the same reason.
+      if (this.shiftFilter === 'all') {
+        datasets = ['1', '2', '3'].map((shiftKey) => ({
+          label: SHIFT_LABELS[shiftKey],
+          data: items.map((e) => Number((e.shift[shiftKey] || 0).toFixed(3))),
+          backgroundColor: SHIFT_COLORS[shiftKey],
+          borderRadius: 5,
+          maxBarThickness: 50,
+          barPercentage: 0.98,
+          categoryPercentage: 0.82
+        }));
+        shiftTags = ['S1', 'S2', 'S3'];
+      } else {
+        datasets = [{
+          label: SHIFT_LABELS[this.shiftFilter],
+          data: items.map((e) => Number((e.shift[this.shiftFilter] || 0).toFixed(3))),
+          backgroundColor: SHIFT_COLORS[this.shiftFilter],
+          borderRadius: 6,
+          maxBarThickness: 50,
+          barPercentage: 0.98,
+          categoryPercentage: 0.82
+        }];
+        shiftTags = null;
+      }
       xTicks = {
         autoSkip: false,
         maxRotation: 0,
