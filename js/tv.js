@@ -75,19 +75,24 @@ function tvFormatClock(d) {
 // tiny in Mode Scroll: the CSS around the canvas grew a lot (a full TV
 // screen instead of a shared half-screen panel) but a hardcoded '11.5px'
 // canvas font doesn't know that. Scaling off chartArea.height means the
-// same code draws normal-sized text in the compact dense layout and much
+// same code draws normal-sized text in the compact dense layout and
 // bigger text once Mode Scroll gives the chart the whole screen — no
 // separate "large mode" flag needed, and it also re-scales automatically on
 // every resize (Chart.js's ResizeObserver fires when Mode Scroll shows/hides
 // a panel, since that's a 0-height <-> real-height size change).
+// The max end is kept modest on purpose: unlike the trend/rank panels
+// (which scroll internally if their content doesn't fit), this bar chart
+// has no scroll fallback — Bos wants it to stay small enough to always show
+// every Line's bar and its "Total: X Kg" tick label in full on one screen,
+// rather than text so big it gets clipped off the bottom.
 function tvBarDecorationsPlugin(shiftLabels) {
   return {
     id: 'tvBarDecorations',
     afterDatasetsDraw(chart) {
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 300;
-      const valueFontPx = Math.round(Math.max(11.5, Math.min(34, areaH / 16)));
-      const tagFontPx = Math.round(Math.max(10, Math.min(26, areaH / 21)));
+      const valueFontPx = Math.round(Math.max(11.5, Math.min(20, areaH / 40)));
+      const tagFontPx = Math.round(Math.max(10, Math.min(15, areaH / 55)));
       const tagMinBarHeight = Math.max(22, tagFontPx * 2);
 
       chart.data.datasets.forEach((dataset, dsIndex) => {
@@ -597,13 +602,15 @@ const TvBoard = {
               minRotation: 0,
               autoSkipPadding: 6,
               // Scriptable (a function, not a fixed size) so this scales up
-              // automatically whenever the chart itself gets much taller —
-              // Mode Scroll giving this canvas the whole TV screen, above
-              // all — instead of staying pinned at a size that only looked
-              // right in the compact dense layout.
+              // a bit whenever the chart itself gets taller — Mode Scroll
+              // giving this canvas the whole TV screen, above all — but
+              // capped modestly: this chart has no scroll fallback, so the
+              // 2-line "Line X / Total: Y Kg" label has to reliably fit
+              // under the bars instead of pushing the total content taller
+              // than one screen and getting clipped off the bottom.
               font: (ctx) => {
                 const h = (ctx.chart.chartArea && ctx.chart.chartArea.height) || 300;
-                return { size: Math.round(Math.max(12, Math.min(26, h / 24))), weight: '700' };
+                return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
               color: '#3a0510',
               callback: function (value, index) {
