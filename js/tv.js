@@ -32,9 +32,11 @@ const TV_SCROLL_SLIDE_MS = 10 * 1000;
 // on purpose — the trend mini-charts need to actually be readable as they
 // scroll past, not just skimmed.
 const TV_SCROLL_INNER_SPEED_PX_PER_SEC = 45;
-// Once the auto-scroll reaches the very bottom, hold still there for this
-// long before advancing to the next slide — so the last item gets read time
-// too, instead of the slide changing the instant the scroll animation ends.
+// A trend/rank slide that needs to auto-scroll holds still for this long
+// both before the scroll starts (so the first item gets read, not just
+// glimpsed) and after it reaches the bottom (so the last item does too),
+// instead of the motion starting/ending the instant the slide appears or
+// the scroll finishes.
 const TV_SCROLL_SETTLE_MS = 3000;
 // How long the slide-up/slide-in transition takes when Mode Scroll moves
 // from one full-screen panel to the next — must match the CSS transition
@@ -367,10 +369,13 @@ const TvBoard = {
   // The bar chart is capped (in CSS/JS) to never overflow, so it never
   // scrolls. Trend and rank CAN overflow one screen (e.g. Waferflat's 14
   // Lines), so those two get an actual scrollable element instead — the
-  // container that has `overflow-y: auto` in CSS for that slide.
+  // container that has `overflow-y: auto` in CSS for that slide. Both
+  // target the LIST/GRID itself, not the whole panel — keeping each
+  // panel's card-title fixed in place while only its content scrolls,
+  // so the two behave (and feel) identically.
   getSlideScrollEl(key) {
     if (key === 'trend') return this.els.trendGrid;
-    if (key === 'rank') return this.els.scrollSlideEls.rank;
+    if (key === 'rank') return this.els.rankList;
     return null;
   },
 
@@ -429,10 +434,12 @@ const TvBoard = {
   // scrollable element) always gets the plain TV_SCROLL_SLIDE_MS dwell.
   // Trend/rank get that same plain dwell too IF everything already fits on
   // one screen — but the moment it doesn't (more Lines than fit, or a long
-  // Top Rank list), this auto-scrolls through the overflow at a fixed speed
-  // instead of just leaving a native scrollbar sitting there unused, taking
-  // however long that scroll needs (at least the normal dwell, longer if
-  // there's a lot to get through) before moving to the next slide.
+  // Top Rank list), this holds still on the very top for a moment (so the
+  // first item actually gets read, not just glimpsed as motion starts),
+  // then auto-scrolls through the overflow at a fixed speed, then holds
+  // still again at the bottom — taking however long all that needs (at
+  // least the normal dwell, longer if there's a lot to get through) before
+  // moving to the next slide.
   armSlideDwell() {
     this.stopSlideDwell();
     if (!this.scrollModeOn || this.scrollPaused) return;
@@ -462,23 +469,36 @@ const TvBoard = {
 
     const scrollDurationMs = (distance / TV_SCROLL_INNER_SPEED_PX_PER_SEC) * 1000;
     const durationMs = Math.max(TV_SCROLL_SLIDE_MS, scrollDurationMs);
-    const startTime = performance.now();
-    const step = (now) => {
-      if (!this.scrollModeOn || this.scrollPaused) return;
-      const t = Math.min(1, (now - startTime) / durationMs);
-      scrollEl.scrollTop = startTop + distance * t;
-      if (t < 1) {
-        this.scrollAnimRAF = requestAnimationFrame(step);
-        return;
-      }
-      // Reached the very bottom — pin it there exactly (rAF timing can land
-      // a pixel or two short) and hold still for a moment before moving on,
-      // instead of advancing the instant the scroll motion stops.
-      scrollEl.scrollTop = maxScrollTop;
-      this.scrollAnimRAF = null;
-      this.scrollSlideTimer = setTimeout(() => this.advanceScrollSlide(), TV_SCROLL_SETTLE_MS);
+    const beginScrolling = () => {
+      const startTime = performance.now();
+      const step = (now) => {
+        if (!this.scrollModeOn || this.scrollPaused) return;
+        const t = Math.min(1, (now - startTime) / durationMs);
+        scrollEl.scrollTop = startTop + distance * t;
+        if (t < 1) {
+          this.scrollAnimRAF = requestAnimationFrame(step);
+          return;
+        }
+        // Reached the very bottom — pin it there exactly (rAF timing can
+        // land a pixel or two short) and hold still for a moment before
+        // moving on, instead of advancing the instant the motion stops.
+        scrollEl.scrollTop = maxScrollTop;
+        this.scrollAnimRAF = null;
+        this.scrollSlideTimer = setTimeout(() => this.advanceScrollSlide(), TV_SCROLL_SETTLE_MS);
+      };
+      this.scrollAnimRAF = requestAnimationFrame(step);
     };
-    this.scrollAnimRAF = requestAnimationFrame(step);
+
+    // Hold still at the top before the scroll motion starts — same idea as
+    // the settle pause at the bottom, mirrored at the beginning, so the
+    // topmost item doesn't get skipped past the instant the slide appears.
+    // Only applies at the true start (startTop is still 0): resuming from a
+    // pause mid-scroll should continue moving right away, not re-pause.
+    if (startTop < 1) {
+      this.scrollSlideTimer = setTimeout(beginScrolling, TV_SCROLL_SETTLE_MS);
+    } else {
+      beginScrolling();
+    }
   },
 
   stopSlideDwell() {
@@ -500,24 +520,28 @@ const TvBoard = {
       this.showScrollSlide(0);
       return;
     }
-    // Switch to the bar slide's classes RIGHT NOW, before advancePlant() runs
-    // — not after. advancePlant() re-renders the rank list as part of
-    // swapping in the new Plant's data, and if the rank panel is still the
-    // "active" Mode Scroll slide while that happens, the horizontal
-    // Plant-to-Plant transition ends up sliding the rank panel out and back
-    // in (old Plant's rank → new Plant's rank) instead of the bar chart — so
-    // the new Plant's Top Rank flashes on screen before snapping to bar.
-    // Flipping the slide to bar first means that flash never happens: the
-    // transition swaps out the bar chart (old data, briefly) for the bar
-    // chart (new data), exactly like every other Plant advance.
-    this.scrollSlideIndex = 0;
-    Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
-      el.classList.toggle('tv-scroll-hide', key !== 'bar');
+    // Flip the visible slide back to bar at the exact same invisible instant
+    // the new Plant's data gets swapped in — not before, and not after.
+    // Switching it BEFORE advancePlant() runs would show the OLD Plant's bar
+    // chart the moment rank's dwell ends, only for the horizontal transition
+    // to then carry that stale bar chart away — reading as "it went back to
+    // the bar chart, THEN changed Plant". Switching it AFTER (once
+    // advancePlant() resolves) would instead leave rank as the active slide
+    // throughout the transition, flashing the NEW Plant's Top Rank first.
+    // Passing this as advancePlant()'s onDataSwap hook means it runs while
+    // the board is off-screen mid-transition (see playSlideTransition) —
+    // the same hidden moment the data itself changes — so neither flash can
+    // happen: what slides out is the OLD Plant's rank, what slides in is the
+    // NEW Plant's bar chart, exactly like a normal Plant advance.
+    await this.advancePlant(() => {
+      this.scrollSlideIndex = 0;
+      Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
+        el.classList.toggle('tv-scroll-hide', key !== 'bar');
+      });
     });
-    await this.advancePlant(); // reuses the existing prefetch + slide transition
     // Dwell timer only starts now, once the new Plant's bar chart is actually
-    // on screen — starting it earlier (e.g. via showScrollSlide()) would eat
-    // into the 10s viewing time with however long advancePlant() took.
+    // on screen — starting it earlier would eat into the 10s viewing time
+    // with however long advancePlant() took.
     if (this.scrollModeOn) this.armSlideDwell();
   },
 
@@ -597,7 +621,12 @@ const TvBoard = {
   // instantly — but if the network was slow, this holds the CURRENT Plant
   // on screen rather than switching to something half-loaded) and only
   // then plays the slide transition.
-  async advancePlant() {
+  // `onDataSwap`, if given, runs at the exact moment the new Plant's data is
+  // swapped in inside playSlideTransition() — while the board is off-screen
+  // and invisible. Mode Scroll uses this to also flip the visible slide back
+  // to the bar chart right then, so that hidden instant is the ONLY moment
+  // anything changes — see playSlideTransition()'s comment for why.
+  async advancePlant(onDataSwap) {
     if (!this.cycleActive) return;
     const plants = PLANT_ORDER;
     const nextPlant = plants[(plants.indexOf(this.els.plantSelect.value) + 1) % plants.length];
@@ -606,7 +635,7 @@ const TvBoard = {
     if (!data) data = await this.prefetchPlant(nextPlant);
     if (!this.cycleActive) return; // fullscreen may have been exited while we waited
 
-    await this.playSlideTransition(nextPlant, data);
+    await this.playSlideTransition(nextPlant, data, onDataSwap);
     this.prefetchCache.delete(nextPlant);
 
     // While Mode Scroll is active, advanceScrollSlide() (which called us) is
@@ -619,7 +648,7 @@ const TvBoard = {
   // then it slides into place. Because `data` was fetched ahead of time,
   // the chart rebuild happens while the board is off-screen and invisible,
   // so nothing pops in half-drawn once it slides into view.
-  async playSlideTransition(nextPlant, data) {
+  async playSlideTransition(nextPlant, data, onDataSwap) {
     const board = this.els.board;
 
     board.classList.add('tv-slide-out');
@@ -638,6 +667,10 @@ const TvBoard = {
     } else {
       await this.refresh();
     }
+    // Anything else that should change at the same invisible instant as the
+    // data (e.g. Mode Scroll switching its visible slide back to bar) —
+    // still off-screen, so it's exactly as unnoticeable as the data swap.
+    if (onDataSwap) onDataSwap();
 
     void board.offsetWidth; // flush again so removing tv-slide-prep animates back in
 
