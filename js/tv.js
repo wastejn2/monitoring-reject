@@ -19,6 +19,16 @@ const TV_SLIDE_MS = 380; // must match the CSS transition duration on .tv-board-
 // background, so it's already sitting ready by the time the slide happens —
 // the switch itself never has to wait on the network.
 const TV_PREFETCH_LEAD_MS = 6000;
+// Mode Scroll: pixels/second the board auto-scrolls at. Kept slow and fixed
+// so the dwell time on each Plant naturally scales with how much content
+// there is (a 14-Line Waferflat takes longer to scroll through than a
+// 5-Line Plant) instead of a flat timer cutting a long page off early or
+// sitting idle on a short one.
+const TV_SCROLL_SPEED_PX_PER_SEC = 32;
+// Minimum scrollable distance worth animating — below this (a Plant with
+// almost no data) there's nothing meaningful to scroll through, so just
+// dwell in place for one cycle instead of doing a near-zero-distance "scroll".
+const TV_SCROLL_MIN_DISTANCE = 24;
 
 // Shift 3 runs 23:00-07:00, so it belongs to the production day it started
 // on even though the clock has already rolled into the next calendar date.
@@ -103,6 +113,10 @@ const TvBoard = {
   cyclePrefetchTimer: null,
   cycleActive: false,
   autoRotateOn: false,
+  scrollModeOn: false,
+  scrollRAF: null,
+  scrollPrefetchTimer: null,
+  scrollDwellTimer: null,
   loading: false,
   fullscreenBound: false,
   // Background-prefetch bookkeeping for the auto-cycle: data fetched ahead
@@ -126,7 +140,8 @@ const TvBoard = {
       board: document.getElementById('tv-board-body'),
       page: document.getElementById('page-tv'),
       fullscreenBtn: document.getElementById('tv-fullscreen-btn'),
-      autorotateBtn: document.getElementById('tv-autorotate-btn')
+      autorotateBtn: document.getElementById('tv-autorotate-btn'),
+      scrollModeBtn: document.getElementById('tv-scrollmode-btn')
     };
 
     const plants = PLANT_ORDER.slice();
@@ -138,9 +153,13 @@ const TvBoard = {
     this.els.plantSelect.addEventListener('change', () => {
       localStorage.setItem(TV_PLANT_KEY, this.els.plantSelect.value);
       this.refresh();
-      // manual override during fullscreen auto-cycle: give it a fresh 30s
+      // manual override during an active auto-cycle: give it a fresh dwell
       // (also drops any stale prefetch, since the sequence just changed)
-      if (this.cycleActive) {
+      if (this.scrollModeOn) {
+        this.prefetchCache.clear();
+        this.resetScrollPosition();
+        this.startAutoScroll();
+      } else if (this.cycleActive) {
         this.prefetchCache.clear();
         this.startCycle();
       }
@@ -148,6 +167,7 @@ const TvBoard = {
 
     this.els.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
     this.els.autorotateBtn.addEventListener('click', () => this.toggleAutoRotate());
+    this.els.scrollModeBtn.addEventListener('click', () => this.toggleScrollMode());
 
     if (!this.fullscreenBound) {
       document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
@@ -155,6 +175,7 @@ const TvBoard = {
     }
 
     this.updateAutoRotateBtn();
+    this.updateScrollModeBtn();
   },
 
   start() {
@@ -166,10 +187,14 @@ const TvBoard = {
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     // Leaving the TV page entirely — always fully stop, regardless of
-    // whether auto-rotate was on, so it starts clean next time.
+    // whether auto-rotate/scroll-mode was on, so it starts clean next time.
     this.autoRotateOn = false;
     this.updateAutoRotateBtn();
     this.stopCycle();
+    this.scrollModeOn = false;
+    this.updateScrollModeBtn();
+    this.applyScrollModeClass();
+    this.stopAutoScroll();
   },
 
   toggleFullscreen() {
@@ -193,19 +218,149 @@ const TvBoard = {
     if (isFull && !this.autoRotateOn) {
       this.autoRotateOn = true;
       this.updateAutoRotateBtn();
-      this.startCycle();
+      if (this.scrollModeOn) this.cycleActive = true; else this.startCycle();
+    }
+    // Mode Scroll scrolls a different element depending on fullscreen state
+    // (the board panel inside fullscreen, the whole page outside it) — restart
+    // the animation against the right container whenever that changes.
+    if (this.scrollModeOn) {
+      this.stopAutoScroll();
+      this.resetScrollPosition();
+      this.startAutoScroll();
     }
   },
 
   toggleAutoRotate() {
     this.autoRotateOn = !this.autoRotateOn;
     this.updateAutoRotateBtn();
+    if (this.scrollModeOn) {
+      // Mode Scroll drives its own advance loop off the scroll animation
+      // finishing, never the timer-based cycle — just flip the flag that
+      // onScrollCycleDone() checks instead of arming scheduleCycleStep().
+      this.cycleActive = this.autoRotateOn;
+      return;
+    }
     if (this.autoRotateOn) this.startCycle(); else this.stopCycle();
   },
 
   updateAutoRotateBtn() {
     this.els.autorotateBtn.textContent = this.autoRotateOn ? '⏸ Auto-Ganti: Aktif' : '🔄 Auto-Ganti Plant';
     this.els.autorotateBtn.classList.toggle('active', this.autoRotateOn);
+  },
+
+  // ---------- Mode Scroll ----------
+  // A second display mode: instead of squeezing the bar/rank/trend panels
+  // onto one screen, each becomes a full-height "page" and the board
+  // auto-scrolls down through them slowly; once it reaches the bottom, the
+  // existing Plant auto-cycle (prefetch + slide transition) advances to the
+  // next Plant — reusing the exact same mechanism the 30s timer mode uses,
+  // just triggered by "scroll finished" instead of a fixed timer.
+  toggleScrollMode() {
+    this.scrollModeOn = !this.scrollModeOn;
+    this.updateScrollModeBtn();
+    this.applyScrollModeClass();
+    this.stopAutoScroll();
+    if (this.scrollModeOn) {
+      // Turning Mode Scroll on implies Auto-Ganti Plant — there'd be nothing
+      // to advance to otherwise once the scroll finishes.
+      if (!this.autoRotateOn) {
+        this.autoRotateOn = true;
+        this.updateAutoRotateBtn();
+      }
+      this.stopCycle();
+      this.cycleActive = true;
+      this.resetScrollPosition();
+      this.startAutoScroll();
+    } else {
+      this.resetScrollPosition();
+      if (this.autoRotateOn) this.startCycle();
+    }
+  },
+
+  updateScrollModeBtn() {
+    this.els.scrollModeBtn.textContent = this.scrollModeOn ? '📜 Mode Scroll: Aktif' : '📜 Mode Scroll';
+    this.els.scrollModeBtn.classList.toggle('active', this.scrollModeOn);
+  },
+
+  applyScrollModeClass() {
+    this.els.page.classList.toggle('tv-scroll-mode', this.scrollModeOn);
+  },
+
+  // In real Fullscreen, the board panel itself is the scroll container
+  // (CSS gives it overflow-y:auto in Mode Scroll); outside Fullscreen (or on
+  // a browser without the Fullscreen API, e.g. iPhone Safari) it's the page
+  // itself that grows tall and scrolls.
+  getScrollContainer() {
+    const isFull = document.fullscreenElement === this.els.page;
+    return isFull ? this.els.board : (document.scrollingElement || document.documentElement);
+  },
+
+  resetScrollPosition() {
+    this.getScrollContainer().scrollTop = 0;
+  },
+
+  startAutoScroll() {
+    this.stopAutoScroll();
+    if (!this.scrollModeOn) return;
+    const el = this.getScrollContainer();
+    const distance = Math.max(0, el.scrollHeight - el.clientHeight);
+
+    if (distance < TV_SCROLL_MIN_DISTANCE) {
+      // Nothing meaningful to scroll (e.g. a Plant with very little data) —
+      // just dwell in place for one normal cycle, then advance.
+      this.scrollDwellTimer = setTimeout(() => this.onScrollCycleDone(), TV_CYCLE_MS);
+      return;
+    }
+
+    const durationMs = (distance / TV_SCROLL_SPEED_PX_PER_SEC) * 1000;
+    const startTop = el.scrollTop;
+    const startTime = performance.now();
+
+    // Same lead-time prefetch trick as the timer-based cycle, just anchored
+    // to the scroll's own duration instead of the fixed 30s.
+    const leadMs = Math.min(TV_PREFETCH_LEAD_MS, Math.floor(durationMs / 2));
+    this.scrollPrefetchTimer = setTimeout(() => {
+      if (this.scrollModeOn && this.cycleActive) {
+        const plants = PLANT_ORDER;
+        const nextPlant = plants[(plants.indexOf(this.els.plantSelect.value) + 1) % plants.length];
+        this.prefetchPlant(nextPlant);
+      }
+    }, Math.max(0, durationMs - leadMs));
+
+    const step = (now) => {
+      if (!this.scrollModeOn) return;
+      const t = Math.min(1, (now - startTime) / durationMs);
+      el.scrollTop = startTop + distance * t;
+      if (t < 1) {
+        this.scrollRAF = requestAnimationFrame(step);
+      } else {
+        this.onScrollCycleDone();
+      }
+    };
+    this.scrollRAF = requestAnimationFrame(step);
+  },
+
+  stopAutoScroll() {
+    if (this.scrollRAF) { cancelAnimationFrame(this.scrollRAF); this.scrollRAF = null; }
+    if (this.scrollPrefetchTimer) { clearTimeout(this.scrollPrefetchTimer); this.scrollPrefetchTimer = null; }
+    if (this.scrollDwellTimer) { clearTimeout(this.scrollDwellTimer); this.scrollDwellTimer = null; }
+  },
+
+  async onScrollCycleDone() {
+    if (!this.scrollModeOn) return;
+    if (!this.autoRotateOn) {
+      // Auto-Ganti Plant was switched off while Mode Scroll stayed on — keep
+      // looping the SAME Plant's scroll indefinitely rather than stopping
+      // dead on a finished, static page.
+      this.resetScrollPosition();
+      this.startAutoScroll();
+      return;
+    }
+    await this.advancePlant(); // reuses the existing prefetch + slide transition
+    if (this.scrollModeOn) {
+      this.resetScrollPosition();
+      this.startAutoScroll();
+    }
   },
 
   startCycle() {
@@ -296,7 +451,9 @@ const TvBoard = {
     await this.playSlideTransition(nextPlant, data);
     this.prefetchCache.delete(nextPlant);
 
-    if (this.cycleActive) this.scheduleCycleStep();
+    // While Mode Scroll is active, onScrollCycleDone() (which called us) is
+    // the one that re-arms the next dwell — never the timer-based cycle too.
+    if (this.cycleActive && !this.scrollModeOn) this.scheduleCycleStep();
   },
 
   // PowerPoint-style push: current board slides out to the left, the new
