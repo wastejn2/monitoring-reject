@@ -804,8 +804,12 @@ const TvBoard = {
       backgroundColor: shiftColors[shiftKey],
       borderRadius: 5,
       maxBarThickness: 50,
-      barPercentage: 0.98,
-      categoryPercentage: 0.82
+      // Shift bars within one Line pressed fully together (no internal gap)
+      // and the gap between Lines opened up further, so each Line's 3-bar
+      // group reads as one solid cluster that's clearly separated from its
+      // neighbors instead of looking like it could blend into them.
+      barPercentage: 1,
+      categoryPercentage: 0.7
     }));
 
     if (this.chart) this.chart.destroy();
