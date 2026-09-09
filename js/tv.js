@@ -500,11 +500,25 @@ const TvBoard = {
       this.showScrollSlide(0);
       return;
     }
+    // Switch to the bar slide's classes RIGHT NOW, before advancePlant() runs
+    // — not after. advancePlant() re-renders the rank list as part of
+    // swapping in the new Plant's data, and if the rank panel is still the
+    // "active" Mode Scroll slide while that happens, the horizontal
+    // Plant-to-Plant transition ends up sliding the rank panel out and back
+    // in (old Plant's rank → new Plant's rank) instead of the bar chart — so
+    // the new Plant's Top Rank flashes on screen before snapping to bar.
+    // Flipping the slide to bar first means that flash never happens: the
+    // transition swaps out the bar chart (old data, briefly) for the bar
+    // chart (new data), exactly like every other Plant advance.
+    this.scrollSlideIndex = 0;
+    Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
+      el.classList.toggle('tv-scroll-hide', key !== 'bar');
+    });
     await this.advancePlant(); // reuses the existing prefetch + slide transition
-    // Instant reset back to the bar slide — the Plant-to-Plant horizontal
-    // slide transition just happened, so a second (vertical) animation on
-    // top of it would just look busy rather than smooth.
-    if (this.scrollModeOn) this.showScrollSlide(0, { animate: false });
+    // Dwell timer only starts now, once the new Plant's bar chart is actually
+    // on screen — starting it earlier (e.g. via showScrollSlide()) would eat
+    // into the 10s viewing time with however long advancePlant() took.
+    if (this.scrollModeOn) this.armSlideDwell();
   },
 
   startCycle() {
