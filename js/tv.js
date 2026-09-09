@@ -803,11 +803,18 @@ const TvBoard = {
       data: activeLines.map((l) => Number((perLine.get(l)[shiftKey] || 0).toFixed(3))),
       backgroundColor: shiftColors[shiftKey],
       borderRadius: 5,
-      maxBarThickness: 50,
       // Shift bars within one Line pressed fully together (no internal gap)
       // and the gap between Lines opened up further, so each Line's 3-bar
       // group reads as one solid cluster that's clearly separated from its
       // neighbors instead of looking like it could blend into them.
+      // No maxBarThickness cap: on a plant with only 1-2 Lines the category
+      // slot is huge, and a fixed thickness cap left the actual bars far
+      // narrower than their allotted slot — which put all that leftover
+      // slot space back as visible gaps between S1/S2/S3, undoing the
+      // barPercentage/categoryPercentage tightening above. Letting bars
+      // fill their slot keeps them touching regardless of how many Lines
+      // are on screen (a dense plant's slots are already narrow, so this
+      // has no effect there).
       barPercentage: 1,
       categoryPercentage: 0.7
     }));
