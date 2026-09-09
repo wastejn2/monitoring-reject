@@ -851,6 +851,8 @@ tbody tr:hover { background: var(--surface-soft); }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Containing block for the hidden panels' position:absolute below. */
+  position: relative;
 }
 .tv-page.tv-scroll-mode:fullscreen .tv-main-row,
 .tv-page.tv-scroll-mode:fullscreen .tv-left-col {
@@ -869,31 +871,61 @@ tbody tr:hover { background: var(--surface-soft); }
   justify-content: center;
   margin-bottom: 0;
   box-sizing: border-box;
-  /* Slide-up transition between Mode Scroll slides (bar/trend/rank) — js/tv.js
-     toggles .tv-scroll-out (leaving panel) / .tv-scroll-prep (incoming panel,
-     staged below before animating up into place). Duration must match
-     TV_SCROLL_TRANSITION_MS in js/tv.js. */
+}
+/* Slide-up transition between Mode Scroll slides — js/tv.js toggles
+   .tv-scroll-out (leaving panel) / .tv-scroll-prep (incoming panel, staged
+   below before animating up into place). Duration must match
+   TV_SCROLL_TRANSITION_MS in js/tv.js.
+   Deliberately NOT applied to .tv-panel-trend: profiling a stutter Bos
+   reported right before entering the rank slide traced it to this exact
+   transform transition — animating it forces the browser to promote
+   trend's whole subtree (up to 14 Chart.js canvases) onto a fresh GPU
+   compositing layer and rasterize it, and that one-time cost is expensive
+   enough to visibly stall the transition's very first frames. will-change
+   alone didn't avoid it (Chromium still had to rasterize the layer on
+   first use), so trend is swapped INSTANTLY via .tv-scroll-hide only,
+   never animated — see playScrollSlideTransition()'s fromIsHeavy/toIsHeavy
+   branches, which skip the .tv-scroll-out/.tv-scroll-prep classes below
+   whenever trend is on either side of the transition. Bar and rank have no
+   canvases (rank) or just one (bar), so animating them stays cheap and
+   still carries the "continuous downward scroll" feel on whichever side
+   of the transition isn't trend. */
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank {
   transition: transform 0.42s var(--ease), opacity 0.42s var(--ease);
   transform: translateY(0);
   opacity: 1;
+  will-change: transform, opacity;
 }
 /* The two panels NOT currently showing — js/tv.js toggles this per panel on
    a 10s timer. Higher specificity (extra class, same element) than the
-   layout rule above, so it always wins regardless of source order. */
+   layout rule above, so it always wins regardless of source order.
+   visibility:hidden + position:absolute instead of display:none is
+   deliberate: display:none collapses the panel to 0x0, so every time it
+   comes back (0 -> real size) Chart.js's ResizeObserver has to redraw
+   every canvas inside it from scratch — cheap for bar/rank, but for trend
+   (up to 14 canvases) that redraw was the OTHER stutter found alongside
+   the one Bos reported: revealing trend after bar's exit could block the
+   main thread for 100ms+. Keeping hidden panels at their real full-screen
+   size (just invisible and non-interactive) means Chart.js only ever
+   resizes them once — the moment Mode Scroll turns on or new data loads,
+   while a DIFFERENT slide is on screen — never again at the actual reveal,
+   because their size never changes from then on. */
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar.tv-scroll-hide,
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-hide,
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-hide {
-  display: none;
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar.tv-scroll-out,
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-out,
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-out {
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-out {
   transform: translateY(-70px);
   opacity: 0;
 }
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar.tv-scroll-prep,
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-prep,
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-prep {
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-prep {
   transition: none;
   transform: translateY(70px);
   opacity: 0;
@@ -945,9 +977,15 @@ tbody tr:hover { background: var(--surface-soft); }
   flex-direction: column;
   justify-content: center;
   margin-bottom: 0;
+}
+/* trend excluded from the transform transition here too — same reasoning
+   as the :fullscreen block above (see its comment for the full story). */
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank {
   transition: transform 0.42s var(--ease), opacity 0.42s var(--ease);
   transform: translateY(0);
   opacity: 1;
+  will-change: transform, opacity;
 }
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-hide,
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-hide,
@@ -955,14 +993,12 @@ tbody tr:hover { background: var(--surface-soft); }
   display: none;
 }
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-out,
-.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-out,
-.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend.tv-scroll-out {
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-out {
   transform: translateY(-70px);
   opacity: 0;
 }
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-prep,
-.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-prep,
-.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend.tv-scroll-prep {
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-prep {
   transition: none;
   transform: translateY(70px);
   opacity: 0;
