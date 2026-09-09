@@ -28,8 +28,18 @@ const TV_SCROLL_SLIDE_MS = 10 * 1000;
 // If a trend/rank slide's content doesn't fit on one screen (many Lines, or
 // a long Top Rank list), it auto-scrolls through the overflow at this speed
 // instead of leaving an unused scrollbar sitting there — taking however
-// long that needs (at least TV_SCROLL_SLIDE_MS) before moving on.
-const TV_SCROLL_INNER_SPEED_PX_PER_SEC = 90;
+// long that needs (at least TV_SCROLL_SLIDE_MS) before moving on. Kept slow
+// on purpose — the trend mini-charts need to actually be readable as they
+// scroll past, not just skimmed.
+const TV_SCROLL_INNER_SPEED_PX_PER_SEC = 45;
+// Once the auto-scroll reaches the very bottom, hold still there for this
+// long before advancing to the next slide — so the last item gets read time
+// too, instead of the slide changing the instant the scroll animation ends.
+const TV_SCROLL_SETTLE_MS = 3000;
+// How long the slide-up/slide-in transition takes when Mode Scroll moves
+// from one full-screen panel to the next — must match the CSS transition
+// duration on .tv-panel-bar/.tv-panel-rank/.tv-panel-trend in scroll mode.
+const TV_SCROLL_TRANSITION_MS = 420;
 
 // Shift 3 runs 23:00-07:00, so it belongs to the production day it started
 // on even though the clock has already rolled into the next calendar date.
@@ -190,7 +200,9 @@ const TvBoard = {
         this.prefetchCache.clear();
         this.scrollPaused = false;
         this.updateScrollPauseBtn();
-        this.showScrollSlide(0);
+        // No slide-to-slide animation here — a manual Plant pick is its own
+        // big change (refresh() above already swaps all the data at once).
+        this.showScrollSlide(0, { animate: false });
       } else if (this.cycleActive) {
         this.prefetchCache.clear();
         this.startCycle();
@@ -303,7 +315,10 @@ const TvBoard = {
       }
       this.stopCycle();
       this.cycleActive = true;
-      this.showScrollSlide(0);
+      // Instant reveal — nothing was showing as a Mode Scroll "slide" yet
+      // (the compact layout has all 3 panels visible at once), so there's
+      // no previous slide to animate away from.
+      this.showScrollSlide(0, { animate: false });
     } else {
       // Back to the classic dense layout: no panel stays hidden.
       Object.values(this.els.scrollSlideEls).forEach((el) => el.classList.remove('tv-scroll-hide'));
@@ -359,21 +374,55 @@ const TvBoard = {
     return null;
   },
 
-  // Shows TV_SCROLL_SLIDES[index] full-screen and hides the other two, then
-  // arms its dwell. Index 0 also happens to be exactly what a freshly-shown
-  // Plant should start on, so this doubles as "reset to the top of the
-  // sequence" whenever a new Plant just came on screen.
-  showScrollSlide(index) {
+  // Shows TV_SCROLL_SLIDES[index] full-screen and hides the other two, with
+  // a conveyor-belt-style slide-up transition between them by default (the
+  // old panel lifts up and fades out, the new one rises in from below) so
+  // moving to the next chart reads as a continuation of scrolling down
+  // rather than an abrupt cut. Pass { animate: false } for a plain instant
+  // swap instead — used right after a big Plant change (the horizontal
+  // Plant slide-transition already did the "something changed" motion, so
+  // stacking a second animation on top of it would just look busy) and when
+  // there's no previous slide to animate away from yet (turning Mode Scroll
+  // on for the first time).
+  async showScrollSlide(index, { animate = true } = {}) {
+    const fromKey = TV_SCROLL_SLIDES[this.scrollSlideIndex];
+    const toKey = TV_SCROLL_SLIDES[index];
     this.scrollSlideIndex = index;
-    const activeKey = TV_SCROLL_SLIDES[index];
-    Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
-      el.classList.toggle('tv-scroll-hide', key !== activeKey);
-    });
+
+    if (animate && fromKey !== toKey) {
+      await this.playScrollSlideTransition(fromKey, toKey);
+    } else {
+      Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
+        el.classList.toggle('tv-scroll-hide', key !== toKey);
+      });
+    }
+
     // Clear any scroll position left over from the last time this slide was
     // shown, so it always starts back at the top of its content.
-    const scrollEl = this.getSlideScrollEl(activeKey);
+    const scrollEl = this.getSlideScrollEl(toKey);
     if (scrollEl) scrollEl.scrollTop = 0;
     this.armSlideDwell();
+  },
+
+  // Conveyor-belt slide: the outgoing panel lifts up and fades out, then
+  // (once actually hidden) the incoming one jumps to a "waiting below"
+  // position with no transition, gets revealed, and animates up into place.
+  // Mirrors the existing Plant-to-Plant playSlideTransition() below — same
+  // out/prep/in shape, just vertical instead of horizontal.
+  async playScrollSlideTransition(fromKey, toKey) {
+    const fromEl = this.els.scrollSlideEls[fromKey];
+    const toEl = this.els.scrollSlideEls[toKey];
+
+    fromEl.classList.add('tv-scroll-out');
+    await tvWait(TV_SCROLL_TRANSITION_MS);
+    fromEl.classList.remove('tv-scroll-out');
+    fromEl.classList.add('tv-scroll-hide');
+
+    toEl.classList.remove('tv-scroll-hide');
+    toEl.classList.add('tv-scroll-prep');
+    void toEl.offsetWidth; // flush styles so 'transition: none' applies before the jump
+    toEl.classList.remove('tv-scroll-prep');
+    await tvWait(TV_SCROLL_TRANSITION_MS);
   },
 
   // Decides how long the current slide stays up. The bar slide (no
@@ -420,9 +469,14 @@ const TvBoard = {
       scrollEl.scrollTop = startTop + distance * t;
       if (t < 1) {
         this.scrollAnimRAF = requestAnimationFrame(step);
-      } else {
-        this.advanceScrollSlide();
+        return;
       }
+      // Reached the very bottom — pin it there exactly (rAF timing can land
+      // a pixel or two short) and hold still for a moment before moving on,
+      // instead of advancing the instant the scroll motion stops.
+      scrollEl.scrollTop = maxScrollTop;
+      this.scrollAnimRAF = null;
+      this.scrollSlideTimer = setTimeout(() => this.advanceScrollSlide(), TV_SCROLL_SETTLE_MS);
     };
     this.scrollAnimRAF = requestAnimationFrame(step);
   },
@@ -447,7 +501,10 @@ const TvBoard = {
       return;
     }
     await this.advancePlant(); // reuses the existing prefetch + slide transition
-    if (this.scrollModeOn) this.showScrollSlide(0);
+    // Instant reset back to the bar slide — the Plant-to-Plant horizontal
+    // slide transition just happened, so a second (vertical) animation on
+    // top of it would just look busy rather than smooth.
+    if (this.scrollModeOn) this.showScrollSlide(0, { animate: false });
   },
 
   startCycle() {
