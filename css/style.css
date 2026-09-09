@@ -833,30 +833,36 @@ tbody tr:hover { background: var(--surface-soft); }
    TV SCROLL MODE
    A second display mode for the fullscreen TV kiosk (button next to
    Auto-Ganti Plant): instead of squeezing all 3 panels onto one screen,
-   each panel (bar chart, rank list, trend grid) becomes its own full-height
-   "page", the board scrolls down through them slowly (js/tv.js drives the
-   scrollTop with requestAnimationFrame), and once it reaches the bottom the
-   existing Plant auto-cycle (prefetch + slide transition) advances to the
-   next Plant — same mechanism the normal 30s timer mode already uses. Text
-   and charts are also enlarged here since each panel now owns the whole
-   screen instead of sharing it. The class is toggled on .tv-page by JS; the
-   selectors below win over the plain :fullscreen rules above purely because
-   they carry the extra .tv-scroll-mode class, regardless of source order. */
+   ONE panel (bar chart, then trend, then rank) fills the ENTIRE screen at a
+   time — js/tv.js shows exactly one and hides the other two, holds it for
+   TV_SCROLL_SLIDE_MS (10s), then swaps to the next. After the 3rd (rank),
+   the existing Plant auto-cycle (prefetch + slide transition) advances to
+   the next Plant, same mechanism the normal 30s timer mode uses. Each panel
+   getting the full screen to itself — never sharing it, never mid-scroll —
+   is what lets its text/bars be this large and still fully visible at a
+   glance. `.tv-main-row`/`.tv-left-col` are neutralized with `display:
+   contents` so the 3 panels behave as plain siblings under #tv-board-body,
+   regardless of which one nests under which in the normal grid layout. The
+   class is toggled on .tv-page by JS; these selectors win over the plain
+   :fullscreen rules above purely because they carry the extra
+   .tv-scroll-mode class, regardless of source order. */
 
 .tv-page.tv-scroll-mode:fullscreen #tv-board-body {
-  display: block;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-.tv-page.tv-scroll-mode:fullscreen .tv-main-row { display: block; }
-.tv-page.tv-scroll-mode:fullscreen .tv-left-col { display: flex; flex-direction: column; gap: 0; }
+.tv-page.tv-scroll-mode:fullscreen .tv-main-row,
+.tv-page.tv-scroll-mode:fullscreen .tv-left-col {
+  display: contents;
+}
 
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar,
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-rank,
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-trend {
-  flex: none;
-  min-height: 100vh;
-  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -864,33 +870,43 @@ tbody tr:hover { background: var(--surface-soft); }
   margin-bottom: 0;
   box-sizing: border-box;
 }
+/* The two panels NOT currently showing — js/tv.js toggles this per panel on
+   a 10s timer. Higher specificity (extra class, same element) than the
+   layout rule above, so it always wins regardless of source order. */
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar.tv-scroll-hide,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-hide,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-hide {
+  display: none;
+}
 
-.tv-page.tv-scroll-mode:fullscreen .card-title { font-size: 26px; margin-bottom: 16px; }
+.tv-page.tv-scroll-mode:fullscreen .card-title { font-size: 34px; margin-bottom: 18px; }
 
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 55vh; }
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 0; }
 
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank { overflow: visible; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-list { gap: 16px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-row { padding: 18px 24px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-pos { width: 48px; height: 48px; font-size: 21px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-line { font-size: 21px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-total { font-size: 15px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-value { font-size: 27px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-label { font-size: 13px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank { overflow-y: auto; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-list { gap: 20px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-row { padding: 24px 30px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-pos { width: 60px; height: 60px; font-size: 26px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-line { font-size: 27px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-total { font-size: 18px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-value { font-size: 34px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-label { font-size: 15px; }
 
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend { overflow: visible; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-grid { flex: none; overflow: visible; gap: 22px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item { flex: none; min-height: 170px; min-width: 0; padding: 16px 22px 12px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-chart { flex: none; height: 120px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-line { font-size: 17px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-total { font-size: 14px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-stats { font-size: 13px; gap: 16px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend { overflow: hidden; }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; gap: 24px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item { flex: none; min-height: 200px; min-width: 0; padding: 18px 26px 14px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-chart { flex: none; height: 140px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-line { font-size: 20px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-total { font-size: 16px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-stats { font-size: 15px; gap: 18px; }
 
 /* Same idea outside real Fullscreen (e.g. iPhone Safari, which has no
-   Fullscreen API at all) — stack the 3 panels full-viewport-height and let
-   the whole page scroll instead of a nested container. */
-.tv-page.tv-scroll-mode:not(:fullscreen) .tv-main-row { display: block; }
-.tv-page.tv-scroll-mode:not(:fullscreen) .tv-left-col { gap: 0; }
+   Fullscreen API at all) — one panel fills the viewport at a time instead
+   of a nested fullscreen container. */
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-main-row,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-left-col {
+  display: contents;
+}
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar,
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank,
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend {
@@ -900,6 +916,11 @@ tbody tr:hover { background: var(--surface-soft); }
   flex-direction: column;
   justify-content: center;
   margin-bottom: 0;
+}
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-hide,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-hide,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend.tv-scroll-hide {
+  display: none;
 }
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 300px; }
 
