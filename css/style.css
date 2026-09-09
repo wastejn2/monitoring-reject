@@ -869,6 +869,13 @@ tbody tr:hover { background: var(--surface-soft); }
   justify-content: center;
   margin-bottom: 0;
   box-sizing: border-box;
+  /* Slide-up transition between Mode Scroll slides (bar/trend/rank) — js/tv.js
+     toggles .tv-scroll-out (leaving panel) / .tv-scroll-prep (incoming panel,
+     staged below before animating up into place). Duration must match
+     TV_SCROLL_TRANSITION_MS in js/tv.js. */
+  transition: transform 0.42s var(--ease), opacity 0.42s var(--ease);
+  transform: translateY(0);
+  opacity: 1;
 }
 /* The two panels NOT currently showing — js/tv.js toggles this per panel on
    a 10s timer. Higher specificity (extra class, same element) than the
@@ -877,6 +884,19 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-hide,
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-hide {
   display: none;
+}
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar.tv-scroll-out,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-out,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-out {
+  transform: translateY(-70px);
+  opacity: 0;
+}
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar.tv-scroll-prep,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank.tv-scroll-prep,
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-trend.tv-scroll-prep {
+  transition: none;
+  transform: translateY(70px);
+  opacity: 0;
 }
 
 .tv-page.tv-scroll-mode:fullscreen .card-title { font-size: 34px; margin-bottom: 18px; }
@@ -921,11 +941,27 @@ tbody tr:hover { background: var(--surface-soft); }
   flex-direction: column;
   justify-content: center;
   margin-bottom: 0;
+  transition: transform 0.42s var(--ease), opacity 0.42s var(--ease);
+  transform: translateY(0);
+  opacity: 1;
 }
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-hide,
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-hide,
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend.tv-scroll-hide {
   display: none;
+}
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-out,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-out,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend.tv-scroll-out {
+  transform: translateY(-70px);
+  opacity: 0;
+}
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar.tv-scroll-prep,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-rank.tv-scroll-prep,
+.tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-trend.tv-scroll-prep {
+  transition: none;
+  transform: translateY(70px);
+  opacity: 0;
 }
 .tv-page.tv-scroll-mode:not(:fullscreen) .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 300px; }
 
