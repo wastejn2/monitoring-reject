@@ -25,6 +25,11 @@ const TV_PREFETCH_LEAD_MS = 6000;
 // transition) advances to the next Plant and this sequence starts over.
 const TV_SCROLL_SLIDES = ['bar', 'trend', 'rank'];
 const TV_SCROLL_SLIDE_MS = 10 * 1000;
+// If a trend/rank slide's content doesn't fit on one screen (many Lines, or
+// a long Top Rank list), it auto-scrolls through the overflow at this speed
+// instead of leaving an unused scrollbar sitting there — taking however
+// long that needs (at least TV_SCROLL_SLIDE_MS) before moving on.
+const TV_SCROLL_INNER_SPEED_PX_PER_SEC = 90;
 
 // Shift 3 runs 23:00-07:00, so it belongs to the production day it started
 // on even though the clock has already rolled into the next calendar date.
@@ -134,6 +139,7 @@ const TvBoard = {
   scrollPaused: false,
   scrollSlideIndex: 0,
   scrollSlideTimer: null,
+  scrollAnimRAF: null,
   loading: false,
   fullscreenBound: false,
   // Background-prefetch bookkeeping for the auto-cycle: data fetched ahead
@@ -224,7 +230,7 @@ const TvBoard = {
     this.applyScrollModeClass();
     this.els.scrollPauseBtn.hidden = true;
     this.updateScrollPauseBtn();
-    this.stopScrollPaging();
+    this.stopSlideDwell();
   },
 
   toggleFullscreen() {
@@ -287,7 +293,7 @@ const TvBoard = {
     this.applyScrollModeClass();
     this.els.scrollPauseBtn.hidden = !this.scrollModeOn;
     this.updateScrollPauseBtn();
-    this.stopScrollPaging();
+    this.stopSlideDwell();
     if (this.scrollModeOn) {
       // Turning Mode Scroll on implies Auto-Ganti Plant — there'd be nothing
       // to advance to otherwise once the slide sequence finishes.
@@ -325,7 +331,7 @@ const TvBoard = {
   pauseScrollPaging() {
     if (!this.scrollModeOn || this.scrollPaused) return;
     this.scrollPaused = true;
-    if (this.scrollSlideTimer) { clearTimeout(this.scrollSlideTimer); this.scrollSlideTimer = null; }
+    this.stopSlideDwell();
     this.updateScrollPauseBtn();
   },
 
@@ -333,7 +339,9 @@ const TvBoard = {
     if (!this.scrollModeOn || !this.scrollPaused) return;
     this.scrollPaused = false;
     this.updateScrollPauseBtn();
-    this.armNextSlideTimer(); // gives the current slide a fresh full dwell
+    // armSlideDwell() re-measures scrollTop, so a slide that was mid-scroll
+    // continues from exactly where it left off instead of jumping.
+    this.armSlideDwell();
   },
 
   updateScrollPauseBtn() {
@@ -341,35 +349,87 @@ const TvBoard = {
     this.els.scrollPauseBtn.classList.toggle('active', this.scrollPaused);
   },
 
+  // The bar chart is capped (in CSS/JS) to never overflow, so it never
+  // scrolls. Trend and rank CAN overflow one screen (e.g. Waferflat's 14
+  // Lines), so those two get an actual scrollable element instead — the
+  // container that has `overflow-y: auto` in CSS for that slide.
+  getSlideScrollEl(key) {
+    if (key === 'trend') return this.els.trendGrid;
+    if (key === 'rank') return this.els.scrollSlideEls.rank;
+    return null;
+  },
+
   // Shows TV_SCROLL_SLIDES[index] full-screen and hides the other two, then
-  // arms the timer for its dwell. Index 0 also happens to be exactly what a
-  // freshly-shown Plant should start on, so this doubles as "reset to the
-  // top of the sequence" whenever a new Plant just came on screen.
+  // arms its dwell. Index 0 also happens to be exactly what a freshly-shown
+  // Plant should start on, so this doubles as "reset to the top of the
+  // sequence" whenever a new Plant just came on screen.
   showScrollSlide(index) {
     this.scrollSlideIndex = index;
     const activeKey = TV_SCROLL_SLIDES[index];
     Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
       el.classList.toggle('tv-scroll-hide', key !== activeKey);
     });
-    this.armNextSlideTimer();
+    // Clear any scroll position left over from the last time this slide was
+    // shown, so it always starts back at the top of its content.
+    const scrollEl = this.getSlideScrollEl(activeKey);
+    if (scrollEl) scrollEl.scrollTop = 0;
+    this.armSlideDwell();
   },
 
-  armNextSlideTimer() {
-    if (this.scrollSlideTimer) { clearTimeout(this.scrollSlideTimer); this.scrollSlideTimer = null; }
+  // Decides how long the current slide stays up. The bar slide (no
+  // scrollable element) always gets the plain TV_SCROLL_SLIDE_MS dwell.
+  // Trend/rank get that same plain dwell too IF everything already fits on
+  // one screen — but the moment it doesn't (more Lines than fit, or a long
+  // Top Rank list), this auto-scrolls through the overflow at a fixed speed
+  // instead of just leaving a native scrollbar sitting there unused, taking
+  // however long that scroll needs (at least the normal dwell, longer if
+  // there's a lot to get through) before moving to the next slide.
+  armSlideDwell() {
+    this.stopSlideDwell();
     if (!this.scrollModeOn || this.scrollPaused) return;
-    this.scrollSlideTimer = setTimeout(() => this.advanceScrollSlide(), TV_SCROLL_SLIDE_MS);
-    // On the last slide (rank) of this dwell, the next timer firing is what
-    // moves to the next Plant — start fetching its data now so the slide
+
+    const activeKey = TV_SCROLL_SLIDES[this.scrollSlideIndex];
+
+    // On the rank slide, the next step (once its dwell ends) is what moves
+    // to the next Plant — start fetching its data now so that slide
     // transition never has to wait on the network.
-    if (TV_SCROLL_SLIDES[this.scrollSlideIndex] === 'rank' && this.cycleActive) {
+    if (activeKey === 'rank' && this.cycleActive) {
       const plants = PLANT_ORDER;
       const nextPlant = plants[(plants.indexOf(this.els.plantSelect.value) + 1) % plants.length];
       this.prefetchPlant(nextPlant);
     }
+
+    const scrollEl = this.getSlideScrollEl(activeKey);
+    const maxScrollTop = scrollEl ? Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight) : 0;
+    const startTop = scrollEl ? scrollEl.scrollTop : 0;
+    const distance = Math.max(0, maxScrollTop - startTop);
+
+    if (distance < 20) {
+      // Fits on one screen already (or this is the bar slide, which never
+      // scrolls) — a plain timed dwell, nothing to animate.
+      this.scrollSlideTimer = setTimeout(() => this.advanceScrollSlide(), TV_SCROLL_SLIDE_MS);
+      return;
+    }
+
+    const scrollDurationMs = (distance / TV_SCROLL_INNER_SPEED_PX_PER_SEC) * 1000;
+    const durationMs = Math.max(TV_SCROLL_SLIDE_MS, scrollDurationMs);
+    const startTime = performance.now();
+    const step = (now) => {
+      if (!this.scrollModeOn || this.scrollPaused) return;
+      const t = Math.min(1, (now - startTime) / durationMs);
+      scrollEl.scrollTop = startTop + distance * t;
+      if (t < 1) {
+        this.scrollAnimRAF = requestAnimationFrame(step);
+      } else {
+        this.advanceScrollSlide();
+      }
+    };
+    this.scrollAnimRAF = requestAnimationFrame(step);
   },
 
-  stopScrollPaging() {
+  stopSlideDwell() {
     if (this.scrollSlideTimer) { clearTimeout(this.scrollSlideTimer); this.scrollSlideTimer = null; }
+    if (this.scrollAnimRAF) { cancelAnimationFrame(this.scrollAnimRAF); this.scrollAnimRAF = null; }
   },
 
   async advanceScrollSlide() {
