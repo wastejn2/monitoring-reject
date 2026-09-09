@@ -114,9 +114,11 @@ const TvBoard = {
   cycleActive: false,
   autoRotateOn: false,
   scrollModeOn: false,
+  scrollPaused: false,
   scrollRAF: null,
   scrollPrefetchTimer: null,
   scrollDwellTimer: null,
+  scrollDetectionBound: false,
   loading: false,
   fullscreenBound: false,
   // Background-prefetch bookkeeping for the auto-cycle: data fetched ahead
@@ -141,7 +143,8 @@ const TvBoard = {
       page: document.getElementById('page-tv'),
       fullscreenBtn: document.getElementById('tv-fullscreen-btn'),
       autorotateBtn: document.getElementById('tv-autorotate-btn'),
-      scrollModeBtn: document.getElementById('tv-scrollmode-btn')
+      scrollModeBtn: document.getElementById('tv-scrollmode-btn'),
+      scrollPauseBtn: document.getElementById('tv-scrollpause-btn')
     };
 
     const plants = PLANT_ORDER.slice();
@@ -157,6 +160,8 @@ const TvBoard = {
       // (also drops any stale prefetch, since the sequence just changed)
       if (this.scrollModeOn) {
         this.prefetchCache.clear();
+        this.scrollPaused = false;
+        this.updateScrollPauseBtn();
         this.resetScrollPosition();
         this.startAutoScroll();
       } else if (this.cycleActive) {
@@ -168,6 +173,8 @@ const TvBoard = {
     this.els.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
     this.els.autorotateBtn.addEventListener('click', () => this.toggleAutoRotate());
     this.els.scrollModeBtn.addEventListener('click', () => this.toggleScrollMode());
+    this.els.scrollPauseBtn.addEventListener('click', () => this.toggleScrollPause());
+    this.bindManualScrollDetection();
 
     if (!this.fullscreenBound) {
       document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
@@ -192,8 +199,11 @@ const TvBoard = {
     this.updateAutoRotateBtn();
     this.stopCycle();
     this.scrollModeOn = false;
+    this.scrollPaused = false;
     this.updateScrollModeBtn();
     this.applyScrollModeClass();
+    this.els.scrollPauseBtn.hidden = true;
+    this.updateScrollPauseBtn();
     this.stopAutoScroll();
   },
 
@@ -222,8 +232,11 @@ const TvBoard = {
     }
     // Mode Scroll scrolls a different element depending on fullscreen state
     // (the board panel inside fullscreen, the whole page outside it) — restart
-    // the animation against the right container whenever that changes.
+    // the animation against the right container whenever that changes. Also
+    // clears any pause, since the scroll container itself just changed.
     if (this.scrollModeOn) {
+      this.scrollPaused = false;
+      this.updateScrollPauseBtn();
       this.stopAutoScroll();
       this.resetScrollPosition();
       this.startAutoScroll();
@@ -257,8 +270,11 @@ const TvBoard = {
   // just triggered by "scroll finished" instead of a fixed timer.
   toggleScrollMode() {
     this.scrollModeOn = !this.scrollModeOn;
+    this.scrollPaused = false;
     this.updateScrollModeBtn();
     this.applyScrollModeClass();
+    this.els.scrollPauseBtn.hidden = !this.scrollModeOn;
+    this.updateScrollPauseBtn();
     this.stopAutoScroll();
     if (this.scrollModeOn) {
       // Turning Mode Scroll on implies Auto-Ganti Plant — there'd be nothing
@@ -286,6 +302,57 @@ const TvBoard = {
     this.els.page.classList.toggle('tv-scroll-mode', this.scrollModeOn);
   },
 
+  // Lets Bos stop the auto-scroll at any moment (to read a card longer, or
+  // scroll a panel by hand) without leaving the big full-page Mode Scroll
+  // layout entirely — that's what the separate Mode Scroll on/off button is
+  // for. Also auto-triggered by bindManualScrollDetection() below the moment
+  // he touches the wheel/touchpad/screen himself, so a manual scroll never
+  // fights the animation and snaps back.
+  toggleScrollPause() {
+    if (this.scrollPaused) this.resumeAutoScroll(); else this.pauseAutoScroll();
+  },
+
+  pauseAutoScroll() {
+    if (!this.scrollModeOn || this.scrollPaused) return;
+    this.scrollPaused = true;
+    this.stopAutoScroll();
+    this.updateScrollPauseBtn();
+  },
+
+  resumeAutoScroll() {
+    if (!this.scrollModeOn || !this.scrollPaused) return;
+    this.scrollPaused = false;
+    this.updateScrollPauseBtn();
+    this.startAutoScroll(); // resumes from wherever the container currently sits
+  },
+
+  updateScrollPauseBtn() {
+    this.els.scrollPauseBtn.textContent = this.scrollPaused ? '▶ Lanjutkan Scroll' : '⏸ Jeda Scroll';
+    this.els.scrollPauseBtn.classList.toggle('active', this.scrollPaused);
+  },
+
+  // Any real user scroll gesture (wheel, touch, or the usual scroll
+  // keyboard shortcuts) pauses the auto-scroll immediately, the same as
+  // pressing the Jeda button — otherwise the animation keeps forcing
+  // scrollTop every frame and a manual scroll attempt just snaps right back.
+  // Bound once for the page's lifetime; the handlers themselves no-op
+  // whenever Mode Scroll isn't on or is already paused.
+  bindManualScrollDetection() {
+    if (this.scrollDetectionBound) return;
+    this.scrollDetectionBound = true;
+    const onUserScrollGesture = () => {
+      if (this.scrollModeOn && !this.scrollPaused) this.pauseAutoScroll();
+    };
+    document.addEventListener('wheel', onUserScrollGesture, { passive: true });
+    document.addEventListener('touchstart', onUserScrollGesture, { passive: true });
+    document.addEventListener('keydown', (e) => {
+      if (!this.scrollModeOn || this.scrollPaused) return;
+      if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(e.key)) {
+        this.pauseAutoScroll();
+      }
+    });
+  },
+
   // In real Fullscreen, the board panel itself is the scroll container
   // (CSS gives it overflow-y:auto in Mode Scroll); outside Fullscreen (or on
   // a browser without the Fullscreen API, e.g. iPhone Safari) it's the page
@@ -301,9 +368,15 @@ const TvBoard = {
 
   startAutoScroll() {
     this.stopAutoScroll();
-    if (!this.scrollModeOn) return;
+    if (!this.scrollModeOn || this.scrollPaused) return;
     const el = this.getScrollContainer();
-    const distance = Math.max(0, el.scrollHeight - el.clientHeight);
+    // Remaining distance from WHEREVER the container currently sits, not the
+    // full range from zero — this is what makes resumeAutoScroll() work
+    // correctly after a pause (it just calls this again mid-scroll) instead
+    // of jumping the animation's target past the actual bottom of the page.
+    const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    const startTop = el.scrollTop;
+    const distance = Math.max(0, maxScrollTop - startTop);
 
     if (distance < TV_SCROLL_MIN_DISTANCE) {
       // Nothing meaningful to scroll (e.g. a Plant with very little data) —
@@ -313,7 +386,6 @@ const TvBoard = {
     }
 
     const durationMs = (distance / TV_SCROLL_SPEED_PX_PER_SEC) * 1000;
-    const startTop = el.scrollTop;
     const startTime = performance.now();
 
     // Same lead-time prefetch trick as the timer-based cycle, just anchored
@@ -328,7 +400,7 @@ const TvBoard = {
     }, Math.max(0, durationMs - leadMs));
 
     const step = (now) => {
-      if (!this.scrollModeOn) return;
+      if (!this.scrollModeOn || this.scrollPaused) return;
       const t = Math.min(1, (now - startTime) / durationMs);
       el.scrollTop = startTop + distance * t;
       if (t < 1) {
