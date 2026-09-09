@@ -524,6 +524,7 @@ button, input, select {
 .seg-btn + .seg-btn { border-left: 1.5px solid var(--border); }
 .seg-btn:hover { background: #f5e6e8; }
 .seg-btn.active { background: linear-gradient(135deg, var(--maroon-700), var(--red-500)); color: #fff; }
+.seg-group[hidden] { display: none; } /* same display:inline-flex-vs-[hidden] fix as .field / .nav-item */
 
 .form-card { max-width: 880px; margin-left: auto; margin-right: auto; }
 
