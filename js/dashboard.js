@@ -36,20 +36,10 @@ function isoDateDaysAgo(days) {
   return toLocalISODate(d);
 }
 
-// low -> mid -> high color ramp, kept inside the maroon/gold palette
-const COLOR_STOPS = [
-  { t: 0, rgb: [46, 158, 88] },   // green  (rendah)
-  { t: 0.5, rgb: [216, 179, 112] }, // gold  (sedang)
-  { t: 1, rgb: [156, 16, 41] }    // maroon (tinggi)
-];
-function colorForRatio(t) {
-  t = Math.max(0, Math.min(1, t));
-  let a = COLOR_STOPS[0], b = COLOR_STOPS[1];
-  if (t > 0.5) { a = COLOR_STOPS[1]; b = COLOR_STOPS[2]; }
-  const localT = a.t === b.t ? 0 : (t - a.t) / (b.t - a.t);
-  const rgb = a.rgb.map((v, i) => Math.round(v + (b.rgb[i] - v) * localT));
-  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-}
+// Same S1/S2/S3 palette the TV board uses, so the Dashboard's comparison
+// chart reads as the same visual language once it's broken down by shift.
+const SHIFT_COLORS = { '1': '#d8b370', '2': '#c81e3a', '3': '#55091a' };
+const SHIFT_LABELS = { '1': 'Shift 1', '2': 'Shift 2', '3': 'Shift 3' };
 
 function aggregateByLine(rows) {
   const map = new Map();
@@ -65,43 +55,61 @@ function aggregateByLine(rows) {
   }));
 }
 
-// Same shape as aggregateByLine, but summed across every Line inside each
-// Plant — this is the "Per Plant" view of the comparison chart, where one
-// bar represents the combined total of all its Lines.
-function aggregateByPlant(rows) {
+// Same grouping as aggregateByLine/aggregateByPlant, but also splits each
+// group's reject total by Shift 1/2/3 — this is what feeds the comparison
+// chart's "Semua Shift" breakdown and its per-shift filter.
+function aggregateByKeyPerShift(rows, keyField) {
   const map = new Map();
   rows.forEach((r) => {
-    if (!map.has(r.plant)) map.set(r.plant, { plant: r.plant, output: 0, reject: 0 });
-    const entry = map.get(r.plant);
+    const key = r[keyField];
+    if (!map.has(key)) {
+      const entry = { output: 0, reject: 0, shift: { '1': 0, '2': 0, '3': 0 } };
+      entry[keyField] = key;
+      map.set(key, entry);
+    }
+    const entry = map.get(key);
+    const rejectVal = Number(r.reject) || 0;
     entry.output += Number(r.output) || 0;
-    entry.reject += Number(r.reject) || 0;
+    entry.reject += rejectVal;
+    const shiftKey = String(r.shift);
+    if (entry.shift[shiftKey] !== undefined) entry.shift[shiftKey] += rejectVal;
   });
-  return Array.from(map.values()).map((e) => ({
-    ...e,
-    pct: e.output > 0 ? (e.reject / e.output) * 100 : 0
-  }));
+  return Array.from(map.values());
 }
 
-// Draws the reject value on top of each bar in the comparison chart, in the
-// same "number above the bar" style the TV board already uses.
-const barValueLabelPlugin = {
-  id: 'barValueLabel',
-  afterDatasetsDraw(chart) {
-    const ctx = chart.ctx;
-    const meta = chart.getDatasetMeta(0);
-    const data = chart.data.datasets[0].data;
-    meta.data.forEach((bar, index) => {
-      const value = data[index];
-      if (value === undefined || value === null) return;
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#3a0510';
-      ctx.font = '700 11.5px "Segoe UI", sans-serif';
-      ctx.fillText(formatNumberID(value, 1), bar.x, bar.y - 6);
-      ctx.restore();
-    });
-  }
-};
+// Draws the value on top of every bar/segment — same "number above the bar"
+// style the TV board uses. When shiftTags is given (the "Semua Shift" view,
+// one dataset per shift) it also stamps a small S1/S2/S3 tag near the base
+// of each bar, exactly like the TV board's chart does, so the two read as
+// the same visual language.
+function barShiftValueLabelPlugin(shiftTags) {
+  return {
+    id: 'barShiftValueLabel',
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      chart.data.datasets.forEach((dataset, dsIndex) => {
+        const meta = chart.getDatasetMeta(dsIndex);
+        if (meta.hidden) return;
+        meta.data.forEach((bar, index) => {
+          const value = dataset.data[index];
+          if (!value) return;
+          const barHeight = bar.base - bar.y;
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#3a0510';
+          ctx.font = '700 11px "Segoe UI", sans-serif';
+          ctx.fillText(formatNumberID(value, 1), bar.x, bar.y - 6);
+          if (shiftTags && barHeight > 22) {
+            ctx.fillStyle = dsIndex === 0 ? '#3a0510' : '#ffffff';
+            ctx.font = '700 9.5px "Segoe UI", sans-serif';
+            ctx.fillText(shiftTags[dsIndex], bar.x, bar.base - 8);
+          }
+          ctx.restore();
+        });
+      });
+    }
+  };
+}
 
 function aggregateByDate(rows) {
   const map = new Map();
@@ -123,6 +131,7 @@ const Dashboard = {
   trendChart: null,
   loaded: false,
   barGroupBy: 'line', // 'line' | 'plant' — which grouping the comparison chart shows
+  shiftFilter: 'all', // 'all' | '1' | '2' | '3' — which shift(s) the comparison chart shows
   lastRows: [],
 
   init() {
@@ -138,6 +147,7 @@ const Dashboard = {
       barTitle: document.getElementById('chart-bar-title'),
       barHint: document.getElementById('chart-bar-hint'),
       barGroupButtons: Array.from(document.querySelectorAll('#bar-groupby-toggle .seg-btn')),
+      barShiftButtons: Array.from(document.querySelectorAll('#bar-shift-toggle .seg-btn')),
       trendCanvas: document.getElementById('chart-trend'),
       emptyBar: document.getElementById('empty-bar'),
       emptyTrend: document.getElementById('empty-trend'),
@@ -153,6 +163,15 @@ const Dashboard = {
         const isPlant = this.barGroupBy === 'plant';
         this.els.barTitle.textContent = isPlant ? 'Perbandingan Reject per Plant' : 'Perbandingan Reject per Line';
         this.els.barHint.hidden = !isPlant;
+        this.updateBarChart();
+      });
+    });
+
+    this.els.barShiftButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.shift === this.shiftFilter) return;
+        this.shiftFilter = btn.dataset.shift;
+        this.els.barShiftButtons.forEach((b) => b.classList.toggle('active', b === btn));
         this.updateBarChart();
       });
     });
@@ -219,16 +238,14 @@ const Dashboard = {
   },
 
   // Re-aggregates from the last fetched rows according to the current
-  // Per Line / Per Plant toggle and re-renders the comparison chart — no
-  // need to hit the server again, the raw rows already have everything.
+  // Per Line / Per Plant toggle (and the Shift filter) and re-renders the
+  // comparison chart — no need to hit the server again, the raw rows
+  // already have everything, shift breakdown included.
   updateBarChart() {
-    if (this.barGroupBy === 'plant') {
-      const byPlant = aggregateByPlant(this.lastRows).sort((a, b) => a.plant.localeCompare(b.plant));
-      this.renderBarChart(byPlant, 'plant');
-    } else {
-      const byLine = aggregateByLine(this.lastRows).sort((a, b) => a.line.localeCompare(b.line));
-      this.renderBarChart(byLine, 'line');
-    }
+    const keyField = this.barGroupBy === 'plant' ? 'plant' : 'line';
+    const items = aggregateByKeyPerShift(this.lastRows, keyField)
+      .sort((a, b) => a[keyField].localeCompare(b[keyField]));
+    this.renderBarChart(items, keyField);
   },
 
   renderBarChart(items, labelKey) {
@@ -237,37 +254,56 @@ const Dashboard = {
       if (this.barChart) { this.barChart.destroy(); this.barChart = null; }
       return;
     }
-    const maxReject = Math.max(...items.map((e) => e.reject), 1);
     const labels = items.map((e) => e[labelKey]);
-    const data = items.map((e) => Number(e.reject.toFixed(3)));
-    const colors = items.map((e) => colorForRatio(e.reject / maxReject));
+
+    // "Semua Shift" -> one dataset per shift, colored/tagged just like the
+    // TV board's chart. A specific shift -> a single dataset in that
+    // shift's own color, so it's still visually obvious which shift it is.
+    let datasets, shiftTags;
+    if (this.shiftFilter === 'all') {
+      datasets = ['1', '2', '3'].map((shiftKey) => ({
+        label: SHIFT_LABELS[shiftKey],
+        data: items.map((e) => Number((e.shift[shiftKey] || 0).toFixed(3))),
+        backgroundColor: SHIFT_COLORS[shiftKey],
+        borderRadius: 5,
+        maxBarThickness: 50,
+        barPercentage: 0.98,
+        categoryPercentage: 0.82
+      }));
+      shiftTags = ['S1', 'S2', 'S3'];
+    } else {
+      datasets = [{
+        label: SHIFT_LABELS[this.shiftFilter],
+        data: items.map((e) => Number((e.shift[this.shiftFilter] || 0).toFixed(3))),
+        backgroundColor: SHIFT_COLORS[this.shiftFilter],
+        borderRadius: 6,
+        maxBarThickness: 50,
+        barPercentage: 0.98,
+        categoryPercentage: 0.82
+      }];
+      shiftTags = null;
+    }
 
     if (this.barChart) this.barChart.destroy();
     this.barChart = new Chart(this.els.barCanvas.getContext('2d'), {
       type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Total Reject (Kg)',
-          data,
-          backgroundColor: colors,
-          borderRadius: 6,
-          maxBarThickness: 34
-        }]
-      },
+      data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         animation: { duration: 500, easing: 'easeOutQuart' },
         layout: { padding: { top: 22 } },
         plugins: {
+          // Legend stays off even with 3 datasets — the S1/S2/S3 tag drawn
+          // right on each bar (see barShiftValueLabelPlugin) already says
+          // which shift it is, same reasoning as the TV board's chart.
           legend: { display: false },
           tooltip: {
             backgroundColor: '#3a0510',
             padding: 10,
             cornerRadius: 8,
             callbacks: {
-              label: (ctx) => ` ${formatNumberID(ctx.parsed.y, 2)} Kg`
+              label: (ctx) => ` ${ctx.dataset.label}: ${formatNumberID(ctx.parsed.y, 2)} Kg`
             }
           }
         },
@@ -276,7 +312,7 @@ const Dashboard = {
           y: { grid: { color: '#f1e3e5' }, ticks: { callback: (v) => formatNumberID(v, 0) } }
         }
       },
-      plugins: [barValueLabelPlugin]
+      plugins: [barShiftValueLabelPlugin(shiftTags)]
     });
   },
 
