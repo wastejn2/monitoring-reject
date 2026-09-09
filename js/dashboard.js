@@ -37,9 +37,26 @@ function isoDateDaysAgo(days) {
 }
 
 // Same S1/S2/S3 palette the TV board uses, so the Dashboard's comparison
-// chart reads as the same visual language once it's broken down by shift.
+// chart reads as the same visual language once "Detail per Shift" is on.
 const SHIFT_COLORS = { '1': '#d8b370', '2': '#c81e3a', '3': '#55091a' };
 const SHIFT_LABELS = { '1': 'Shift 1', '2': 'Shift 2', '3': 'Shift 3' };
+
+// low -> mid -> high color ramp, kept inside the maroon/gold palette — the
+// default "Total" view's per-bar coloring (each bar's own reject level
+// relative to the tallest bar on screen).
+const COLOR_STOPS = [
+  { t: 0, rgb: [46, 158, 88] },   // green  (rendah)
+  { t: 0.5, rgb: [216, 179, 112] }, // gold  (sedang)
+  { t: 1, rgb: [156, 16, 41] }    // maroon (tinggi)
+];
+function colorForRatio(t) {
+  t = Math.max(0, Math.min(1, t));
+  let a = COLOR_STOPS[0], b = COLOR_STOPS[1];
+  if (t > 0.5) { a = COLOR_STOPS[1]; b = COLOR_STOPS[2]; }
+  const localT = a.t === b.t ? 0 : (t - a.t) / (b.t - a.t);
+  const rgb = a.rgb.map((v, i) => Math.round(v + (b.rgb[i] - v) * localT));
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
 
 function aggregateByLine(rows) {
   const map = new Map();
@@ -55,9 +72,10 @@ function aggregateByLine(rows) {
   }));
 }
 
-// Same grouping as aggregateByLine/aggregateByPlant, but also splits each
-// group's reject total by Shift 1/2/3 — this is what feeds the comparison
-// chart's "Semua Shift" breakdown and its per-shift filter.
+// Same grouping as aggregateByLine, but also splits each group's reject
+// total by Shift 1/2/3 — used for BOTH comparison-chart modes: the default
+// "Total" view just reads .reject (the sum), "Detail per Shift" reads
+// .shift['1'/'2'/'3'] too, so a single aggregation pass covers both.
 function aggregateByKeyPerShift(rows, keyField) {
   const map = new Map();
   rows.forEach((r) => {
@@ -131,7 +149,7 @@ const Dashboard = {
   trendChart: null,
   loaded: false,
   barGroupBy: 'line', // 'line' | 'plant' — which grouping the comparison chart shows
-  shiftFilter: 'all', // 'all' | '1' | '2' | '3' — which shift(s) the comparison chart shows
+  shiftDetailOn: false, // off (default) = original single Total-per-category bar; on = per-shift breakdown like the TV board
   lastRows: [],
 
   init() {
@@ -147,7 +165,7 @@ const Dashboard = {
       barTitle: document.getElementById('chart-bar-title'),
       barHint: document.getElementById('chart-bar-hint'),
       barGroupButtons: Array.from(document.querySelectorAll('#bar-groupby-toggle .seg-btn')),
-      barShiftButtons: Array.from(document.querySelectorAll('#bar-shift-toggle .seg-btn')),
+      barDetailButtons: Array.from(document.querySelectorAll('#bar-detail-toggle .seg-btn')),
       trendCanvas: document.getElementById('chart-trend'),
       emptyBar: document.getElementById('empty-bar'),
       emptyTrend: document.getElementById('empty-trend'),
@@ -167,11 +185,12 @@ const Dashboard = {
       });
     });
 
-    this.els.barShiftButtons.forEach((btn) => {
+    this.els.barDetailButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
-        if (btn.dataset.shift === this.shiftFilter) return;
-        this.shiftFilter = btn.dataset.shift;
-        this.els.barShiftButtons.forEach((b) => b.classList.toggle('active', b === btn));
+        const wantsOn = btn.dataset.detail === 'on';
+        if (wantsOn === this.shiftDetailOn) return;
+        this.shiftDetailOn = wantsOn;
+        this.els.barDetailButtons.forEach((b) => b.classList.toggle('active', b === btn));
         this.updateBarChart();
       });
     });
@@ -238,9 +257,9 @@ const Dashboard = {
   },
 
   // Re-aggregates from the last fetched rows according to the current
-  // Per Line / Per Plant toggle (and the Shift filter) and re-renders the
-  // comparison chart — no need to hit the server again, the raw rows
-  // already have everything, shift breakdown included.
+  // Per Line / Per Plant toggle (and the Detail per Shift toggle) and
+  // re-renders the comparison chart — no need to hit the server again, the
+  // raw rows already have everything, shift breakdown included.
   updateBarChart() {
     const keyField = this.barGroupBy === 'plant' ? 'plant' : 'line';
     const items = aggregateByKeyPerShift(this.lastRows, keyField)
@@ -256,11 +275,13 @@ const Dashboard = {
     }
     const labels = items.map((e) => e[labelKey]);
 
-    // "Semua Shift" -> one dataset per shift, colored/tagged just like the
-    // TV board's chart. A specific shift -> a single dataset in that
-    // shift's own color, so it's still visually obvious which shift it is.
-    let datasets, shiftTags;
-    if (this.shiftFilter === 'all') {
+    let datasets, shiftTags, xTicks;
+    if (this.shiftDetailOn) {
+      // Detail per Shift -> one dataset per shift, colored/tagged just like
+      // the TV board's chart. That breakdown loses the at-a-glance combined
+      // total each single-bar view used to show, so it comes back as a
+      // second line under the category name on the x-axis — same trick the
+      // TV board's own chart uses for the same reason.
       datasets = ['1', '2', '3'].map((shiftKey) => ({
         label: SHIFT_LABELS[shiftKey],
         data: items.map((e) => Number((e.shift[shiftKey] || 0).toFixed(3))),
@@ -271,17 +292,35 @@ const Dashboard = {
         categoryPercentage: 0.82
       }));
       shiftTags = ['S1', 'S2', 'S3'];
+      xTicks = {
+        autoSkip: false,
+        maxRotation: 0,
+        minRotation: 0,
+        font: { size: 10.5, weight: '700' },
+        callback: function (value, index) {
+          // Same rule as the TV board: drop the "Total: X Kg" line once
+          // there isn't enough width per category, so it never rotates
+          // into a slanted mess on a narrow screen or a Plant with many
+          // Lines — autoSkip then thins the plain labels instead.
+          const perCategoryWidth = this.chart.width / items.length;
+          if (perCategoryWidth < 110) return items[index][labelKey];
+          return [items[index][labelKey], `Total: ${formatNumberID(items[index].reject, 1)} Kg`];
+        }
+      };
     } else {
+      // Total (default) — the original single-bar view: one bar per
+      // category, colored by its own reject level relative to the tallest
+      // bar on screen.
+      const maxReject = Math.max(...items.map((e) => e.reject), 1);
       datasets = [{
-        label: SHIFT_LABELS[this.shiftFilter],
-        data: items.map((e) => Number((e.shift[this.shiftFilter] || 0).toFixed(3))),
-        backgroundColor: SHIFT_COLORS[this.shiftFilter],
+        label: 'Total Reject (Kg)',
+        data: items.map((e) => Number(e.reject.toFixed(3))),
+        backgroundColor: items.map((e) => colorForRatio(e.reject / maxReject)),
         borderRadius: 6,
-        maxBarThickness: 50,
-        barPercentage: 0.98,
-        categoryPercentage: 0.82
+        maxBarThickness: 34
       }];
       shiftTags = null;
+      xTicks = { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10.5 } };
     }
 
     if (this.barChart) this.barChart.destroy();
@@ -308,7 +347,7 @@ const Dashboard = {
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10.5 } } },
+          x: { grid: { display: false }, ticks: xTicks },
           y: { grid: { color: '#f1e3e5' }, ticks: { callback: (v) => formatNumberID(v, 0) } }
         }
       },
