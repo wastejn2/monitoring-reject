@@ -236,6 +236,7 @@ button, input, select {
   border: 1.5px solid var(--border);
 }
 .btn-ghost:hover { background: #f5e6e8; }
+.btn-ghost[hidden] { display: none; }
 
 .btn-spinner {
   width: 16px; height: 16px;
@@ -700,7 +701,7 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-meta-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .tv-meta-value { font-size: 17px; font-weight: 800; color: var(--maroon-900); font-variant-numeric: tabular-nums; }
 
-.tv-fullscreen-btn, .tv-autorotate-btn, .tv-scrollmode-btn {
+.tv-fullscreen-btn, .tv-autorotate-btn, .tv-scrollmode-btn, .tv-scrollpause-btn {
   width: auto;
   padding: 10px 16px;
   font-size: 13px;
@@ -719,6 +720,14 @@ tbody tr:hover { background: var(--surface-soft); }
   background: var(--maroon-700);
   color: #fff;
   border-color: var(--maroon-700);
+}
+/* Shown only while Mode Scroll is on (js/tv.js toggles the [hidden]
+   attribute) — pauses/resumes just the auto-scroll animation so Bos can
+   read or scroll a card manually without exiting the big full-page layout. */
+.tv-scrollpause-btn.active {
+  background: var(--gold);
+  color: var(--maroon-900);
+  border-color: var(--gold);
 }
 
 /* PowerPoint-style push when the fullscreen auto-cycle swaps to the next
