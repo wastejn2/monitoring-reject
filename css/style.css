@@ -908,8 +908,12 @@ tbody tr:hover { background: var(--surface-soft); }
 
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 0; }
 
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank { overflow-y: auto; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-list { gap: 20px; }
+/* The rank list itself scrolls (not the whole panel) — matching the trend
+   panel's structure so the "Top Rank" title stays fixed at the top instead
+   of scrolling away with the rows, and the two panels' auto-scroll feels
+   identical. */
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-rank { overflow: hidden; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; gap: 20px; }
 .tv-page.tv-scroll-mode:fullscreen .tv-rank-row { padding: 24px 30px; }
 .tv-page.tv-scroll-mode:fullscreen .tv-rank-pos { width: 60px; height: 60px; font-size: 26px; }
 .tv-page.tv-scroll-mode:fullscreen .tv-rank-line { font-size: 27px; }
