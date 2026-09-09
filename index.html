@@ -353,9 +353,17 @@
           <div class="card chart-card">
             <div class="card-title-row">
               <h2 class="card-title" id="chart-bar-title">Perbandingan Reject per Line</h2>
+            </div>
+            <div class="chart-controls-row">
               <div class="seg-group" id="bar-groupby-toggle">
                 <button type="button" class="seg-btn active" data-group="line">Per Line</button>
                 <button type="button" class="seg-btn" data-group="plant">Per Plant</button>
+              </div>
+              <div class="seg-group" id="bar-shift-toggle">
+                <button type="button" class="seg-btn active" data-shift="all">Semua Shift</button>
+                <button type="button" class="seg-btn" data-shift="1">Shift 1</button>
+                <button type="button" class="seg-btn" data-shift="2">Shift 2</button>
+                <button type="button" class="seg-btn" data-shift="3">Shift 3</button>
               </div>
             </div>
             <p class="chart-hint" id="chart-bar-hint" hidden>Setiap bar adalah total gabungan seluruh Line di Plant tersebut.</p>
