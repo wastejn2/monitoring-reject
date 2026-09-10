@@ -725,6 +725,17 @@ tbody tr:hover { background: var(--surface-soft); }
   white-space: nowrap;
   animation: tv-conn-pulse 1.6s ease-in-out infinite;
 }
+/* THE actual bug behind "banner never turns off": `.tv-conn-status` and the
+   browser's built-in `[hidden] { display: none }` rule have equal CSS
+   specificity (one class vs. one attribute), and this stylesheet's rule
+   above is the one loaded last — so `display: flex` always won even after
+   JS set `connStatus.hidden = true`. The element was never actually hidden;
+   it just always displayed as flex, permanently, from the moment this
+   feature shipped. Bumping this one selector's specificity above the
+   `display: flex` rule is what actually lets `hidden` win. */
+.tv-conn-status[hidden] {
+  display: none;
+}
 .tv-conn-status-dot {
   width: 9px;
   height: 9px;
