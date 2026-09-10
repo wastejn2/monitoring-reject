@@ -190,6 +190,44 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
   };
 }
 
+// Draws the daily value permanently above each point on a trend mini-chart
+// — a TV screen has no mouse to hover for Chart.js's built-in tooltip, so
+// without this the actual day-to-day numbers were only ever visible for the
+// single day highlighted by the (unusable) tooltip. Font size scales off
+// the chart's own plotting-area height, same reasoning as the bar chart's
+// text above: these cards are much taller in Mode Scroll than in the
+// compact dense layout, and a fixed pixel size would read fine in one and
+// illegibly small (or oversized) in the other.
+function tvTrendValueLabelsPlugin() {
+  return {
+    id: 'tvTrendValueLabels',
+    afterDatasetsDraw(chart) {
+      const meta = chart.getDatasetMeta(0);
+      if (!meta || meta.hidden) return;
+      const ctx = chart.ctx;
+      const areaH = (chart.chartArea && chart.chartArea.height) || 90;
+      const fontPx = Math.round(Math.max(10, Math.min(20, areaH / 7)));
+      const values = chart.data.datasets[0].data;
+      const points = meta.data;
+      const last = points.length - 1;
+
+      ctx.save();
+      ctx.fillStyle = '#3a0510';
+      ctx.font = `700 ${fontPx}px "Segoe UI", sans-serif`;
+      points.forEach((point, index) => {
+        const value = values[index];
+        if (value === null || value === undefined) return;
+        // Center-aligned labels on the first/last point spill past the
+        // canvas edge, so those two are anchored to their point instead of
+        // straddling it.
+        ctx.textAlign = index === 0 ? 'left' : index === last ? 'right' : 'center';
+        ctx.fillText(formatNumberID(value, 1), point.x, point.y - Math.max(6, fontPx * 0.55));
+      });
+      ctx.restore();
+    }
+  };
+}
+
 const TvBoard = {
   els: {},
   chart: null,
@@ -206,6 +244,11 @@ const TvBoard = {
   scrollAnimRAF: null,
   loading: false,
   fullscreenBound: false,
+  // Connection-trouble tracking: how many refreshes in a row have failed,
+  // and the shortened retry timer that fires while trouble is ongoing (see
+  // handleRefreshFailure/handleRefreshSuccess below).
+  consecutiveFailures: 0,
+  retryTimer: null,
   // Background-prefetch bookkeeping for the auto-cycle: data fetched ahead
   // of time for whichever Plant comes next, keyed by Plant name, so the
   // slide transition can render instantly instead of waiting on the API.
@@ -217,6 +260,8 @@ const TvBoard = {
       plantSelect: document.getElementById('tv-plant'),
       dateH1: document.getElementById('tv-date-h1'),
       lastUpdated: document.getElementById('tv-last-updated'),
+      connStatus: document.getElementById('tv-conn-status'),
+      connStatusText: document.getElementById('tv-conn-status-text'),
       barPlantLabel: document.getElementById('tv-bar-plant-label'),
       barCanvas: document.getElementById('tv-chart-bar'),
       emptyBar: document.getElementById('tv-empty-bar'),
@@ -765,11 +810,46 @@ const TvBoard = {
     this.loading = false;
 
     if (!res.ok) {
-      if (res.error === 'unauthorized') toast('Sesi berakhir, silakan login kembali.', 'error');
+      if (res.error === 'unauthorized') {
+        toast('Sesi berakhir, silakan login kembali.', 'error');
+        return;
+      }
+      // network_error / bad_response — the chart(s) just silently stop
+      // updating otherwise, which on an unattended TV looks identical to
+      // "no data today" with no way to tell the two apart. Surface it and
+      // retry sooner than the normal 5-minute cycle so the board recovers
+      // on its own the moment the signal comes back.
+      this.handleRefreshFailure();
       return;
     }
 
+    this.handleRefreshSuccess();
     this.applyData(plant, res.rows, dates, h1);
+  },
+
+  // Shows the persistent "Gagal memperbarui data" banner (in the same
+  // toolbar row on every Mode Scroll slide, so it's visible no matter which
+  // chart is currently on screen) and schedules a faster retry, backing off
+  // a little each consecutive failure so a prolonged outage doesn't hammer
+  // the API once it's reachable again.
+  handleRefreshFailure() {
+    this.consecutiveFailures += 1;
+    if (this.els.connStatus) {
+      this.els.connStatus.hidden = false;
+      this.els.connStatusText.textContent = this.consecutiveFailures > 1
+        ? `Gagal memperbarui data (${this.consecutiveFailures}x) — cek koneksi`
+        : 'Gagal memperbarui data — cek koneksi';
+    }
+    clearTimeout(this.retryTimer);
+    const delaySec = Math.min(60, 10 * this.consecutiveFailures);
+    this.retryTimer = setTimeout(() => this.refresh(), delaySec * 1000);
+  },
+
+  handleRefreshSuccess() {
+    this.consecutiveFailures = 0;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    if (this.els.connStatus) this.els.connStatus.hidden = true;
   },
 
   renderBar(rows, plant, h1) {
@@ -1023,9 +1103,14 @@ const TvBoard = {
                   }
                 }
               },
-              y: { display: false }
+              // Headroom above the highest point so its always-on value
+              // label (tvTrendValueLabelsPlugin below) has room to sit
+              // above the line instead of getting clipped against the top
+              // of the chart or crossed out by the dashed Max reference.
+              y: { display: false, suggestedMax: entry.max * 1.3 }
             }
-          }
+          },
+          plugins: [tvTrendValueLabelsPlugin()]
         });
         this.trendCharts.push(chart);
       });
