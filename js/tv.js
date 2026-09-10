@@ -1047,17 +1047,27 @@ const TvBoard = {
       .forEach((entry) => {
         const card = document.createElement('div');
         card.className = 'tv-trend-item';
+        // Max/Min/Avg sit beside the chart (not above it) in the default
+        // board/Auto-Ganti view — Bos asked for this so the chart itself
+        // gets the vertical room to make its rise/fall obvious, instead of
+        // losing a slice of height to a stats row above it. Mode Scroll
+        // keeps the old above-the-chart layout on purpose (Bos: "kalau yg
+        // mode scroll pertahankan saja") — .tv-trend-item-body/-stats get a
+        // scroll-mode-specific override back to that in style.css, since
+        // both modes share this same markup.
         card.innerHTML = `
           <div class="tv-trend-item-head">
             <span class="tv-trend-item-line">${escapeHtml(entry.line)}</span>
             <span class="tv-trend-item-total">Total: ${formatNumberID(entry.total, 1)} Kg</span>
           </div>
-          <div class="tv-trend-item-stats">
-            <span>Max <b>${formatNumberID(entry.max, 1)}</b></span>
-            <span>Min <b>${formatNumberID(entry.min, 1)}</b></span>
-            <span>Avg <b>${formatNumberID(entry.avg, 1)}</b></span>
+          <div class="tv-trend-item-body">
+            <div class="tv-trend-item-chart"><canvas></canvas></div>
+            <div class="tv-trend-item-stats">
+              <span>Max <b>${formatNumberID(entry.max, 1)}</b></span>
+              <span>Min <b>${formatNumberID(entry.min, 1)}</b></span>
+              <span>Avg <b>${formatNumberID(entry.avg, 1)}</b></span>
+            </div>
           </div>
-          <div class="tv-trend-item-chart"><canvas></canvas></div>
         `;
         this.els.trendGrid.appendChild(card);
 
