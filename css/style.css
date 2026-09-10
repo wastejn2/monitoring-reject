@@ -701,6 +701,51 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-meta-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .tv-meta-value { font-size: 17px; font-weight: 800; color: var(--maroon-900); font-variant-numeric: tabular-nums; }
 
+/* Connection-trouble banner: hidden by default, shown by tv.js the moment a
+   background refresh fails (bad network / API down) and hidden again the
+   instant one succeeds. Lives in the same toolbar row as "Terakhir
+   Diperbarui" so it's visible on every Mode Scroll slide, not just the bar
+   chart's — a TV screen sitting unattended for hours needs this to be loud
+   and persistent (unlike a toast, which fades before anyone walks by), so
+   viewers can tell "the chart is empty/stale because of signal" apart from
+   "there's genuinely no data today".
+   Pulses gently to catch the eye without being distracting from far away. */
+.tv-conn-status {
+  margin-left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #fdecea;
+  border: 1px solid #e0554a;
+  color: #9c2b1f;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  animation: tv-conn-pulse 1.6s ease-in-out infinite;
+}
+.tv-conn-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d8332a;
+  flex-shrink: 0;
+}
+@keyframes tv-conn-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.tv-page.tv-scroll-mode:fullscreen .tv-conn-status {
+  padding: 14px 26px;
+  font-size: 20px;
+  gap: 12px;
+}
+.tv-page.tv-scroll-mode:fullscreen .tv-conn-status-dot {
+  width: 14px;
+  height: 14px;
+}
+
 .tv-fullscreen-btn, .tv-autorotate-btn, .tv-scrollmode-btn, .tv-scrollpause-btn {
   width: auto;
   padding: 10px 16px;
@@ -1168,6 +1213,7 @@ tbody tr:hover { background: var(--surface-soft); }
   .tv-main-row { grid-template-columns: 1fr; }
   .tv-meta { margin-left: 0; text-align: left; }
   .tv-meta + .tv-meta { margin-left: 0; }
+  .tv-conn-status { margin-left: 0; }
 
   /* Mobile TV kiosk: the "everything fits one screen, zero scroll" layout
      above only makes sense on an actual wide TV. Once .tv-main-row folds
