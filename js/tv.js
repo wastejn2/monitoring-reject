@@ -693,7 +693,21 @@ const TvBoard = {
   },
 
   // Fetches one Plant's dashboard data without touching the UI — used both
-  // for the visible refresh() and for the silent background prefetch.
+  // for the visible refresh() and for the silent background prefetch (Auto-
+  // Ganti Plant / Mode Scroll fetch the *next* Plant ahead of time here, then
+  // show it via applyData() directly in playSlideTransition() rather than
+  // through refresh()).
+  //
+  // The connection-status banner is hooked here rather than in refresh()
+  // precisely because of that second path: a prefetch succeeding is just as
+  // much proof the connection is fine as a visible refresh succeeding is,
+  // and a prefetch failing is just as real a connectivity problem — so both
+  // need to reach the banner. Hooking it only in refresh() (the original
+  // bug) left a stale "Gagal memperbarui data" banner stuck on screen
+  // forever once Auto-Ganti Plant switched to using prefetched data, since
+  // that path never touched the banner at all — the board could keep
+  // showing fresh, correct data on every slide while the banner from one
+  // earlier hiccup never went away.
   async fetchPlantData(plant) {
     const dates = tvLast7DatesEndingYesterday();
     const h1 = dates[dates.length - 1];
@@ -702,7 +716,24 @@ const TvBoard = {
       endDate: h1,
       plant: [plant]
     });
+    this.noteFetchOutcome(res);
     return { res, dates, h1 };
+  },
+
+  // 'unauthorized' is deliberately left alone here (not treated as a
+  // connection failure) — refresh() surfaces that with its own toast, and
+  // an expired session isn't a "check your signal" situation. It's also
+  // deliberately not surfaced from a background prefetch at all: that would
+  // mean a session could expire mid-cycle and pop a login toast with no
+  // visible refresh() ever having run, which reads as the app randomly
+  // interrupting itself. It resurfaces naturally the next time a visible
+  // refresh() runs.
+  noteFetchOutcome(res) {
+    if (res.ok) {
+      this.handleRefreshSuccess();
+    } else if (res.error !== 'unauthorized') {
+      this.handleRefreshFailure();
+    }
   },
 
   // Kicks off (or reuses) a background fetch for `plant` and stashes the
@@ -810,20 +841,17 @@ const TvBoard = {
     this.loading = false;
 
     if (!res.ok) {
+      // Banner/retry-backoff already handled inside fetchPlantData() via
+      // noteFetchOutcome() — that's the single choke point shared with the
+      // background prefetch path, so it stays correct no matter which path
+      // actually made the request. Only the unauthorized toast is specific
+      // to a *visible* refresh (see noteFetchOutcome()'s comment).
       if (res.error === 'unauthorized') {
         toast('Sesi berakhir, silakan login kembali.', 'error');
-        return;
       }
-      // network_error / bad_response — the chart(s) just silently stop
-      // updating otherwise, which on an unattended TV looks identical to
-      // "no data today" with no way to tell the two apart. Surface it and
-      // retry sooner than the normal 5-minute cycle so the board recovers
-      // on its own the moment the signal comes back.
-      this.handleRefreshFailure();
       return;
     }
 
-    this.handleRefreshSuccess();
     this.applyData(plant, res.rows, dates, h1);
   },
 
