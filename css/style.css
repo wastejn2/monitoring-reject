@@ -988,12 +988,23 @@ tbody tr:hover { background: var(--surface-soft); }
   opacity: 0;
 }
 
-.tv-page.tv-scroll-mode:fullscreen .card-title { font-size: 34px; margin-bottom: 18px; }
+/* Mode Scroll's fixed px sizes below were tuned by eye on a laptop browser
+   window, which is exactly why they read fine there but tiny on an actual
+   TV: a TV's browser typically reports a much wider/taller viewport (often
+   a real 1920x1080 or bigger) than a laptop window does, and a fixed px
+   value is the same physical fraction of ANY viewport regardless of how
+   large that viewport is — it doesn't know it's being asked to fill a
+   65" screen instead of a 15" one. clamp(min, preferred-in-vw/vh, max)
+   fixes that: the preferred value is a percentage of the actual rendered
+   viewport, so it scales itself up automatically on a bigger/higher-res
+   screen (and stays readable, not oversized, on a smaller one thanks to
+   the min/max floor and ceiling). */
+.tv-page.tv-scroll-mode:fullscreen .card-title { font-size: clamp(24px, 2.2vw, 44px); margin-bottom: 18px; }
 /* The per-shift bar chart has no internal scroll fallback (unlike trend/rank
    below), so it needs to reliably fit whole on one screen — a smaller title
    here just leaves a bit more headroom for the chart + its 2-line "Total"
    tick labels, on top of the more conservative font caps in js/tv.js. */
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .card-title { font-size: 24px; margin-bottom: 10px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .card-title { font-size: clamp(18px, 1.6vw, 30px); margin-bottom: 10px; }
 
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 0; }
 
@@ -1004,11 +1015,11 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-rank { overflow: hidden; }
 .tv-page.tv-scroll-mode:fullscreen .tv-rank-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; gap: 20px; }
 .tv-page.tv-scroll-mode:fullscreen .tv-rank-row { padding: 24px 30px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-pos { width: 60px; height: 60px; font-size: 26px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-line { font-size: 27px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-total { font-size: 18px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-value { font-size: 34px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-label { font-size: 15px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-pos { width: clamp(46px, 4vw, 74px); height: clamp(46px, 4vw, 74px); font-size: clamp(18px, 1.8vw, 32px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-line { font-size: clamp(19px, 2vw, 34px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-total { font-size: clamp(13px, 1.2vw, 22px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-value { font-size: clamp(24px, 2.4vw, 42px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-avg-label { font-size: clamp(11px, 1vw, 18px); }
 
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-trend { overflow: hidden; }
 .tv-page.tv-scroll-mode:fullscreen .tv-trend-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; gap: 24px; }
@@ -1017,10 +1028,14 @@ tbody tr:hover { background: var(--surface-soft); }
    yg mode scroll pertahankan saja") — override the side-by-side default
    back to stacked, and the stats row back to horizontal. */
 .tv-page.tv-scroll-mode:fullscreen .tv-trend-item-body { flex-direction: column; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-chart { flex: none; height: 140px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-line { font-size: 20px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-total { font-size: 16px; }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-stats { flex-direction: row; justify-content: flex-start; font-size: 15px; gap: 18px; order: -1; margin-bottom: 6px; }
+/* vh-based, not vw — this is the chart's height, and it also feeds the
+   canvas-drawn label sizes in js/tv.js (they scale off this element's
+   rendered pixel height), so growing it on a taller/bigger screen makes
+   the in-chart date/value text bigger too, not just this container. */
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-chart { flex: none; height: clamp(110px, 14vh, 230px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-line { font-size: clamp(15px, 1.6vw, 27px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-total { font-size: clamp(12px, 1.2vw, 21px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-stats { flex-direction: row; justify-content: flex-start; font-size: clamp(11px, 1.2vw, 20px); gap: 18px; order: -1; margin-bottom: 6px; }
 
 /* Same idea outside real Fullscreen (e.g. iPhone Safari, which has no
    Fullscreen API at all) — one panel fills the viewport at a time instead
