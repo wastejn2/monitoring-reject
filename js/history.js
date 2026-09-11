@@ -32,6 +32,11 @@ const HistoryPage = {
       ehLine: document.getElementById('eh-line'),
       ehOutput: document.getElementById('eh-output'),
       ehReject: document.getElementById('eh-reject'),
+      ehGroupRejectTotal: document.getElementById('eh-group-reject-total'),
+      ehGroupRejectSubdept: document.getElementById('eh-group-reject-subdept'),
+      ehRejectProses: document.getElementById('eh-reject-proses'),
+      ehRejectPackaging: document.getElementById('eh-reject-packing'),
+      ehSubdeptTotal: document.getElementById('eh-subdept-total'),
       ehError: document.getElementById('eh-error'),
       ehSubmitBtn: document.getElementById('btn-eh-submit'),
       ehCancelBtn: document.getElementById('btn-eh-cancel'),
@@ -59,7 +64,13 @@ const HistoryPage = {
       this.load();
     });
 
-    this.els.ehPlant.addEventListener('change', () => this.fillLineOptionsForEdit());
+    this.els.ehPlant.addEventListener('change', () => {
+      this.fillLineOptionsForEdit();
+      this.applyEditSubdeptVisibility();
+    });
+    this.els.ehOutput.addEventListener('input', () => this.updateEditSubdeptTotalHint());
+    this.els.ehRejectProses.addEventListener('input', () => this.updateEditSubdeptTotalHint());
+    this.els.ehRejectPackaging.addEventListener('input', () => this.updateEditSubdeptTotalHint());
     this.els.editForm.addEventListener('submit', (e) => this.onEditSubmit(e));
     this.els.ehCancelBtn.addEventListener('click', () => this.closeEditModal());
 
@@ -144,6 +155,9 @@ const HistoryPage = {
     this.els.ehLine.value = r.line;
     this.els.ehOutput.value = r.output;
     this.els.ehReject.value = r.reject;
+    this.els.ehRejectProses.value = r.rejectProses || '';
+    this.els.ehRejectPackaging.value = r.rejectPackaging || '';
+    this.applyEditSubdeptVisibility();
     document.getElementById('modal-backdrop').hidden = false;
     this.els.editModal.hidden = false;
   },
@@ -151,6 +165,26 @@ const HistoryPage = {
   closeEditModal() {
     document.getElementById('modal-backdrop').hidden = true;
     this.els.editModal.hidden = true;
+  },
+
+  // 1112/1113 rows enter/edit as Reject Proses + Reject Packing, exactly
+  // like the Input Data page — mirrors InputForm.onPlantChange so editing
+  // an existing row never sends the old-style totalReject shape the backend
+  // no longer accepts for those two Plants.
+  applyEditSubdeptVisibility() {
+    const subdept = plantHasSubDept(this.els.ehPlant.value);
+    this.els.ehGroupRejectTotal.hidden = subdept;
+    this.els.ehGroupRejectSubdept.hidden = !subdept;
+    this.els.ehSubdeptTotal.hidden = !subdept;
+    this.updateEditSubdeptTotalHint();
+  },
+
+  updateEditSubdeptTotalHint() {
+    if (this.els.ehGroupRejectSubdept.hidden) return;
+    const proses = parseFloat(this.els.ehRejectProses.value);
+    const packaging = parseFloat(this.els.ehRejectPackaging.value);
+    const total = (isNaN(proses) ? 0 : proses) + (isNaN(packaging) ? 0 : packaging);
+    this.els.ehSubdeptTotal.innerHTML = `Total Reject: <b>${formatNumberID(total, 3)}</b> Kg`;
   },
 
   async onEditSubmit(e) {
@@ -163,15 +197,34 @@ const HistoryPage = {
     const plant = this.els.ehPlant.value;
     const line = this.els.ehLine.value;
     const output = parseFloat(this.els.ehOutput.value);
-    const reject = parseFloat(this.els.ehReject.value);
+    const subdept = plantHasSubDept(plant);
 
-    if (!tanggal || !shift || !plant || !line || isNaN(output) || isNaN(reject)) {
+    if (!tanggal || !shift || !plant || !line || isNaN(output) || output < 0) {
       showMessage(this.els.ehError, 'Semua field wajib diisi dengan benar.', 'error');
       return;
     }
-    if (output < 0 || reject < 0) {
-      showMessage(this.els.ehError, 'Angka tidak valid.', 'error');
-      return;
+
+    // Mirrors InputForm.onSubmit's branching — resolveRejectFigures_ on the
+    // backend applies the exact same logic, this is just for fast feedback.
+    let reject;
+    const payload = { id, tanggal, shift, plant, line, outputProduksi: output };
+    if (subdept) {
+      const rejectProses = parseFloat(this.els.ehRejectProses.value);
+      const rejectPackaging = parseFloat(this.els.ehRejectPackaging.value);
+      if (isNaN(rejectProses) || rejectProses < 0 || isNaN(rejectPackaging) || rejectPackaging < 0) {
+        showMessage(this.els.ehError, 'Angka tidak valid.', 'error');
+        return;
+      }
+      reject = rejectProses + rejectPackaging;
+      payload.rejectProses = rejectProses;
+      payload.rejectPackaging = rejectPackaging;
+    } else {
+      reject = parseFloat(this.els.ehReject.value);
+      if (isNaN(reject) || reject < 0) {
+        showMessage(this.els.ehError, 'Angka tidak valid.', 'error');
+        return;
+      }
+      payload.totalReject = reject;
     }
     if (reject > output) {
       showMessage(this.els.ehError, 'Total reject tidak boleh lebih besar dari output produksi.', 'error');
@@ -179,11 +232,7 @@ const HistoryPage = {
     }
 
     setButtonLoading(this.els.ehSubmitBtn, true);
-    const res = await Api.updateRawData({
-      id, tanggal, shift, plant, line,
-      outputProduksi: output,
-      totalReject: reject
-    });
+    const res = await Api.updateRawData(payload);
     setButtonLoading(this.els.ehSubmitBtn, false);
 
     if (!res.ok) {
