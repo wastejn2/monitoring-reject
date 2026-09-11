@@ -254,6 +254,17 @@ button, input, select {
   gap: 4px 18px;
 }
 .form-grid.two-col { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
+.form-grid[hidden] { display: none; } /* .form-grid's own display:grid would otherwise beat the UA [hidden] rule */
+
+.form-hint-total {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--maroon-800);
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: -8px 0 16px;
+}
 
 .form-actions {
   display: flex;
@@ -1004,7 +1015,7 @@ tbody tr:hover { background: var(--surface-soft); }
    below), so it needs to reliably fit whole on one screen — a smaller title
    here just leaves a bit more headroom for the chart + its 2-line "Total"
    tick labels, on top of the more conservative font caps in js/tv.js. */
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .card-title { font-size: clamp(18px, 1.6vw, 30px); margin-bottom: 10px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .card-title { font-size: clamp(22px, 2.1vw, 38px); margin-bottom: 10px; }
 
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 0; }
 
