@@ -1020,7 +1020,7 @@ tbody tr:hover { background: var(--surface-soft); }
    viewport, so it scales itself up automatically on a bigger/higher-res
    screen (and stays readable, not oversized, on a smaller one thanks to
    the min/max floor and ceiling). */
-.tv-page.tv-scroll-mode:fullscreen .card-title { font-size: clamp(24px, 2.2vw, 44px); margin-bottom: 18px; }
+.tv-page.tv-scroll-mode:fullscreen .card-title { font-size: clamp(44px, 4.2vw, 76px); margin-bottom: 18px; }
 /* The per-shift bar chart has no internal scroll fallback (unlike trend/rank
    below), so it needs to reliably fit whole on one screen — a smaller title
    here just leaves a bit more headroom for the chart + its 2-line "Total"
