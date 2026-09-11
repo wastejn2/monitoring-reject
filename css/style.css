@@ -768,7 +768,7 @@ tbody tr:hover { background: var(--surface-soft); }
   height: 14px;
 }
 
-.tv-fullscreen-btn, .tv-autorotate-btn, .tv-scrollmode-btn, .tv-scrollpause-btn {
+.tv-fullscreen-btn, .tv-autorotate-btn, .tv-scrollmode-btn, .tv-scrollpause-btn, .tv-subdeptmode-btn {
   width: auto;
   padding: 10px 16px;
   font-size: 13px;
@@ -795,6 +795,16 @@ tbody tr:hover { background: var(--surface-soft); }
   background: var(--gold);
   color: var(--maroon-900);
   border-color: var(--gold);
+}
+/* Manual toggle — only actually changes anything while the Plant on screen
+   is 1112/1113 (js/tv.js just re-renders the SAME bar/trend/rank panels
+   with the Proses/Packing breakdown instead of the normal Total/Shift
+   view); staying on across Auto-Ganti Plant is intentional, other Plants
+   render exactly as before regardless of this button's state. */
+.tv-subdeptmode-btn.active {
+  background: var(--maroon-700);
+  color: #fff;
+  border-color: var(--maroon-700);
 }
 
 /* PowerPoint-style push when the fullscreen auto-cycle swaps to the next
@@ -1015,7 +1025,7 @@ tbody tr:hover { background: var(--surface-soft); }
    below), so it needs to reliably fit whole on one screen — a smaller title
    here just leaves a bit more headroom for the chart + its 2-line "Total"
    tick labels, on top of the more conservative font caps in js/tv.js. */
-.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .card-title { font-size: clamp(22px, 2.1vw, 38px); margin-bottom: 10px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .card-title { font-size: clamp(44px, 4.2vw, 76px); margin-bottom: 10px; }
 
 .tv-page.tv-scroll-mode:fullscreen .tv-panel-bar .tv-bar-wrap { flex: 1 1 auto; height: auto; min-height: 0; }
 
@@ -1044,7 +1054,7 @@ tbody tr:hover { background: var(--surface-soft); }
    rendered pixel height), so growing it on a taller/bigger screen makes
    the in-chart date/value text bigger too, not just this container. */
 .tv-page.tv-scroll-mode:fullscreen .tv-trend-item-chart { flex: none; height: clamp(110px, 14vh, 230px); }
-.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-line { font-size: clamp(15px, 1.6vw, 27px); }
+.tv-page.tv-scroll-mode:fullscreen .tv-trend-item-line { font-size: clamp(30px, 3.2vw, 54px); }
 .tv-page.tv-scroll-mode:fullscreen .tv-trend-item-total { font-size: clamp(12px, 1.2vw, 21px); }
 .tv-page.tv-scroll-mode:fullscreen .tv-trend-item-stats { flex-direction: row; justify-content: flex-start; font-size: clamp(11px, 1.2vw, 20px); gap: 18px; order: -1; margin-bottom: 6px; }
 
@@ -1128,6 +1138,28 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-rank-avg-value { font-size: 19px; font-weight: 800; color: var(--red-500); font-variant-numeric: tabular-nums; }
 .tv-rank-avg-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
 
+/* Mode Sub Dept's rank split (Plant 1112/1113 only): two independent Top
+   Rank lists side by side — Proses on the left, Packing on the right —
+   instead of one combined Total ranking. Reuses .tv-rank-row/-pos/-line/
+   etc. as-is (same font-size rules below and in the fullscreen/Mode Scroll
+   overrides already apply, since those are descendant selectors), just
+   duplicating the gap that used to live on .tv-rank-list itself onto each
+   .tv-rank-col now that .tv-rank-list holds the 2-column wrapper instead of
+   the rows directly. */
+.tv-rank-subdept-split { display: flex; gap: 16px; align-items: flex-start; }
+.tv-rank-col { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.tv-rank-col-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--maroon-800);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.tv-page:fullscreen .tv-rank-col { gap: 5px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-subdept-split { gap: 24px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-col { gap: 20px; }
+.tv-page.tv-scroll-mode:fullscreen .tv-rank-col-title { font-size: clamp(13px, 1.2vw, 22px); }
+
 /* ---- 7-day trend mini charts (stacked "small multiples", one per Line) ---- */
 .tv-trend-grid {
   display: flex;
@@ -1143,6 +1175,13 @@ tbody tr:hover { background: var(--surface-soft); }
 .tv-trend-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
 .tv-trend-item-line { font-size: 12.5px; font-weight: 700; color: var(--maroon-900); }
 .tv-trend-item-total { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+/* Mode Sub Dept's trend card head (Plant 1112/1113 only): the single
+   "Total: X Kg" line is replaced by two color-coded totals matching the
+   chart's own Proses/Packing line colors, so the card head still says
+   which color is which without a separate legend. */
+.tv-trend-item-total-subdept { display: flex; gap: 10px; }
+.tv-subdept-proses-tag { color: #9c1029; }
+.tv-subdept-packing-tag { color: #1b6fa8; }
 /* Chart + Max/Min/Avg side by side (not stats-above-chart) in the default
    board/Auto-Ganti view, so the chart keeps the vertical room to show its
    rise/fall clearly instead of losing a slice of height to a stats row
@@ -1267,6 +1306,7 @@ tbody tr:hover { background: var(--surface-soft); }
   .chart-grid { grid-template-columns: 1fr; }
   .kpi-row { grid-template-columns: 1fr; }
   .tv-main-row { grid-template-columns: 1fr; }
+  .tv-rank-subdept-split { flex-direction: column; }
   .tv-meta { margin-left: 0; text-align: left; }
   .tv-meta + .tv-meta { margin-left: 0; }
   .tv-conn-status { margin-left: 0; }
