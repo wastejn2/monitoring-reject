@@ -704,6 +704,18 @@ const TvBoard = {
       if (this.currentRows) this.renderBar(this.currentRows, this.currentPlant, this.currentH1);
     }
 
+    // Clear any scroll position left over from the last time this slide was
+    // shown BEFORE it's revealed — not after. Doing it after (as this used
+    // to) meant the reveal transition itself briefly showed whatever
+    // scrollTop was left from last time (e.g. Rank scrolled all the way to
+    // the bottom), and only once the slide-in animation finished did it
+    // visibly snap back up to the top and start auto-scrolling again — the
+    // stutter Bos saw going from Trend into Rank. Resetting it now, while
+    // toKey is still hidden/off-screen, means it's already sitting at the
+    // top by the time anyone can see it.
+    const scrollEl = this.getSlideScrollEl(toKey);
+    if (scrollEl) scrollEl.scrollTop = 0;
+
     if (animate && fromKey !== toKey) {
       await this.playScrollSlideTransition(fromKey, toKey);
     } else {
@@ -712,10 +724,6 @@ const TvBoard = {
       });
     }
 
-    // Clear any scroll position left over from the last time this slide was
-    // shown, so it always starts back at the top of its content.
-    const scrollEl = this.getSlideScrollEl(toKey);
-    if (scrollEl) scrollEl.scrollTop = 0;
     this.armSlideDwell();
   },
 
@@ -1235,12 +1243,17 @@ const TvBoard = {
                   // Mode Scroll: the Line name is now the only tick label
                   // (Total moved to the big canvas-drawn text above the
                   // bars), so it can afford to be large and easy to read
-                  // from across the room. (Kept modest — pushing this past
-                  // ~40px feeds back into Chart.js's own layout: a taller
-                  // tick-label row squeezes the plotting area shorter,
-                  // which crowds/overlaps the Total text and per-bar value
-                  // labels drawn above the bars.)
-                  return { size: Math.round(Math.max(24, Math.min(40, h / 18))), weight: '800' };
+                  // from across the room. This was pushed to 48-80px once
+                  // before and had to be walked back — a taller tick-label
+                  // row feeds back into Chart.js's own layout, squeezing the
+                  // plotting area shorter and crowding the Total/value-label
+                  // text drawn above the bars. Trying it again now that the
+                  // label itself is shorter (tvShortLineLabel — "2.1" instead
+                  // of "Line 2.1") and a Plant with many Lines pages at most
+                  // TV_BAR_CHUNK_SIZE at a time (tvChunkActiveLines) — both
+                  // give this far fewer/narrower categories to squeeze
+                  // against than when 48-80px first caused the overlap.
+                  return { size: Math.round(Math.max(48, Math.min(80, h / 9))), weight: '800' };
                 }
                 return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
