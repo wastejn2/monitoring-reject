@@ -42,6 +42,36 @@ const TV_SCROLL_SETTLE_MS = 3000;
 // from one full-screen panel to the next — must match the CSS transition
 // duration on .tv-panel-bar/.tv-panel-rank/.tv-panel-trend in scroll mode.
 const TV_SCROLL_TRANSITION_MS = 420;
+// Mode Scroll only: once a Plant has more active Lines than this on the bar
+// chart (Waferflat can have up to 14), the "Reject per Shift" slide pages
+// through them TV_BAR_CHUNK_SIZE at a time — see tvChunkActiveLines() and
+// advanceBarChunk() — instead of squeezing every Line onto one over-cramped
+// chart. Dense/fullscreen-non-scroll ("mode all") is unaffected: it always
+// draws every Line at once, same as before.
+const TV_BAR_CHUNK_SIZE = 5;
+
+// Slices the full active-Line list down to whichever page (TvBoard.
+// barChunkIndex) should currently be drawn. Outside Mode Scroll, or when
+// everything already fits on one page, this is a no-op returning the whole
+// list untouched (chunkCount: 1).
+function tvChunkActiveLines(allActiveLines) {
+  if (!TvBoard.scrollModeOn || allActiveLines.length <= TV_BAR_CHUNK_SIZE) {
+    return { activeLines: allActiveLines, chunkCount: 1 };
+  }
+  const chunkCount = Math.ceil(allActiveLines.length / TV_BAR_CHUNK_SIZE);
+  const idx = Math.min(TvBoard.barChunkIndex, chunkCount - 1);
+  const activeLines = allActiveLines.slice(idx * TV_BAR_CHUNK_SIZE, idx * TV_BAR_CHUNK_SIZE + TV_BAR_CHUNK_SIZE);
+  return { activeLines, chunkCount };
+}
+
+// Bos: on the TV bar chart's x-axis only, drop the "Line " prefix so "Line
+// 2.1"/"Line 1 WS" read as just "2.1"/"1 WS" — shorter tick labels leave
+// more width per category, which is also what keeps the tick font from
+// having to fight the chart's plotting area for room. Dashboard's own
+// charts are untouched (they never call this).
+function tvShortLineLabel(name) {
+  return String(name).replace(/^Line\s+/, '');
+}
 
 // Shift 3 runs 23:00-07:00, so it belongs to the production day it started
 // on even though the clock has already rolled into the next calendar date.
@@ -136,7 +166,7 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
       const valueFontPx = isScroll
         ? Math.round(Math.max(20, Math.min(38, areaH / 24)))
         : Math.round(Math.max(11.5, Math.min(20, areaH / 40)));
-      const tagFontPx = Math.round(Math.max(24, Math.min(36, areaH / 23)));
+      const tagFontPx = Math.round(Math.max(12, Math.min(18, areaH / 46)));
       const tagMinBarHeight = Math.max(22, tagFontPx * 2);
       const totalFontPx = Math.round(Math.max(28, Math.min(46, areaH / 16)));
 
@@ -196,6 +226,38 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
   };
 }
 
+// Shared by both Trend value-label plugins below. Bos spotted labels on
+// neighboring points overlapping into an unreadable jumble on the actual TV
+// — happens whenever two points sit close together in Kg (so their text is
+// similar) or just close together on the x-axis (7 points across a narrow
+// card leaves little room per point), and the label text is wider than
+// that gap. Rather than trying to predict that in advance, this measures
+// the actual text about to be drawn, checks it against every label already
+// placed this pass, and if it would overlap, nudges it by `step` pixels
+// (negative = up, positive = down) and checks again — up to a few times —
+// so the two labels stack instead of collide. `placed` is one array shared
+// across an entire chart's pass (all points, and for the Sub Dept dual-line
+// version, both datasets) so a label can't collide with ANY earlier one,
+// not just its immediate neighbor.
+function tvResolveLabelY(ctx, placed, text, x, y, align, fontPx, step) {
+  const textWidth = ctx.measureText(text).width;
+  const left = align === 'left' ? x : align === 'right' ? x - textWidth : x - textWidth / 2;
+  const right = left + textWidth;
+  let resolvedY = y;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const top = resolvedY - fontPx;
+    const bottom = resolvedY + fontPx * 0.3;
+    const collides = placed.some((box) =>
+      left < box.right + 2 && right > box.left - 2 &&
+      top < box.bottom + 2 && bottom > box.top - 2
+    );
+    if (!collides) break;
+    resolvedY += step;
+  }
+  placed.push({ left, right, top: resolvedY - fontPx, bottom: resolvedY + fontPx * 0.3 });
+  return resolvedY;
+}
+
 // Draws the daily value permanently above each point on a trend mini-chart
 // — a TV screen has no mouse to hover for Chart.js's built-in tooltip, so
 // without this the actual day-to-day numbers were only ever visible for the
@@ -231,6 +293,8 @@ function tvTrendValueLabelsPlugin(pctValues) {
       const values = chart.data.datasets[0].data;
       const points = meta.data;
       const last = points.length - 1;
+      const lineHeight = fontPx * 1.15;
+      const placed = [];
 
       ctx.save();
       ctx.fillStyle = '#3a0510';
@@ -245,8 +309,10 @@ function tvTrendValueLabelsPlugin(pctValues) {
         // Center-aligned labels on the first/last point spill past the
         // canvas edge, so those two are anchored to their point instead of
         // straddling it.
-        ctx.textAlign = index === 0 ? 'left' : index === last ? 'right' : 'center';
-        ctx.fillText(text, point.x, point.y - Math.max(6, fontPx * 0.55));
+        const align = index === 0 ? 'left' : index === last ? 'right' : 'center';
+        ctx.textAlign = align;
+        const y = tvResolveLabelY(ctx, placed, text, point.x, point.y - Math.max(6, fontPx * 0.55), align, fontPx, -lineHeight);
+        ctx.fillText(text, point.x, y);
       });
       ctx.restore();
     }
@@ -267,6 +333,11 @@ function tvTrendValueLabelsDualPlugin() {
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 90;
       const fontPx = Math.round(Math.max(9, Math.min(26, areaH / 7)));
+      const lineHeight = fontPx * 1.15;
+      // Shared across BOTH datasets' passes below, so a Packing label
+      // (pushed down) can't land on top of a Proses label (pushed up) from
+      // a neighboring point either — not just collisions within one line.
+      const placed = [];
       ctx.save();
       ctx.font = `700 ${fontPx}px "Segoe UI", sans-serif`;
       chart.data.datasets.forEach((dataset, dsIndex) => {
@@ -279,11 +350,19 @@ function tvTrendValueLabelsDualPlugin() {
         points.forEach((point, index) => {
           const value = values[index];
           if (value === null || value === undefined) return;
-          ctx.textAlign = index === 0 ? 'left' : index === last ? 'right' : 'center';
-          const y = dsIndex === 0
+          const align = index === 0 ? 'left' : index === last ? 'right' : 'center';
+          ctx.textAlign = align;
+          const text = formatNumberID(value, 1);
+          // Proses (dataset 0) keeps stacking further up on collision;
+          // Packing (dataset 1) keeps stacking further down — each moves
+          // away from the line in the direction it already started in,
+          // rather than the two colliding into each other.
+          const baseY = dsIndex === 0
             ? point.y - Math.max(6, fontPx * 0.55)
             : point.y + fontPx + Math.max(2, fontPx * 0.25);
-          ctx.fillText(formatNumberID(value, 1), point.x, y);
+          const step = dsIndex === 0 ? -lineHeight : lineHeight;
+          const y = tvResolveLabelY(ctx, placed, text, point.x, baseY, align, fontPx, step);
+          ctx.fillText(text, point.x, y);
         });
       });
       ctx.restore();
@@ -305,6 +384,13 @@ const TvBoard = {
   scrollSlideIndex: 0,
   scrollSlideTimer: null,
   scrollAnimRAF: null,
+  // Mode Scroll's bar slide, when a Plant has more than TV_BAR_CHUNK_SIZE
+  // active Lines: which page is currently drawn, and how many pages exist
+  // in total (set by renderBar/renderBarSubDept each time they draw —
+  // always 1 outside Mode Scroll). armSlideDwell() pages through 0..
+  // barChunkCount-1 before letting the slide sequence move on to Trend.
+  barChunkIndex: 0,
+  barChunkCount: 1,
   loading: false,
   fullscreenBound: false,
   // Manual toggle — only ever changes anything while the Plant on screen is
@@ -484,6 +570,10 @@ const TvBoard = {
   toggleSubDeptMode() {
     this.subDeptModeOn = !this.subDeptModeOn;
     this.updateSubDeptModeBtn();
+    // Swapping views changes how many bars/Lines are on screen — start any
+    // Mode Scroll bar-chunk paging over from page 1 rather than carrying a
+    // page index that may no longer make sense.
+    this.barChunkIndex = 0;
     // Re-render whatever's already on screen from the cached rows — no need
     // to hit the server again, Proses/Packing are already part of the same
     // fetched rows the normal view uses.
@@ -529,6 +619,11 @@ const TvBoard = {
     } else {
       // Back to the classic dense layout: no panel stays hidden.
       Object.values(this.els.scrollSlideEls).forEach((el) => el.classList.remove('tv-scroll-hide'));
+      // The bar chart may currently be showing just one chunk page (Mode
+      // Scroll only) — redraw it now that scrollModeOn is false so dense
+      // mode goes straight back to showing every Line at once.
+      this.barChunkIndex = 0;
+      if (this.currentRows) this.renderBar(this.currentRows, this.currentPlant, this.currentH1);
       if (this.autoRotateOn) this.startCycle();
     }
   },
@@ -598,6 +693,16 @@ const TvBoard = {
     const fromKey = TV_SCROLL_SLIDES[this.scrollSlideIndex];
     const toKey = TV_SCROLL_SLIDES[index];
     this.scrollSlideIndex = index;
+
+    // index 0 is always the bar slide, and every caller that jumps straight
+    // to it (turning Mode Scroll on, a manual Plant pick, looping the same
+    // Plant's sequence again) means "start a fresh pass" — so always page
+    // its chunked bar chart back to the first page here, redrawing from the
+    // already-cached rows so the reset is actually visible.
+    if (index === 0) {
+      this.barChunkIndex = 0;
+      if (this.currentRows) this.renderBar(this.currentRows, this.currentPlant, this.currentH1);
+    }
 
     if (animate && fromKey !== toKey) {
       await this.playScrollSlideTransition(fromKey, toKey);
@@ -672,6 +777,14 @@ const TvBoard = {
 
     const activeKey = TV_SCROLL_SLIDES[this.scrollSlideIndex];
 
+    // Bar slide with more Lines than fit on one page (TV_BAR_CHUNK_SIZE):
+    // page to the next chunk instead of moving on to Trend — advanceScroll
+    // Slide() only takes over once the last page's dwell has run out.
+    if (activeKey === 'bar' && this.barChunkIndex < this.barChunkCount - 1) {
+      this.scrollSlideTimer = setTimeout(() => this.advanceBarChunk(), TV_SCROLL_SLIDE_MS);
+      return;
+    }
+
     // On the rank slide, the next step (once its dwell ends) is what moves
     // to the next Plant — start fetching its data now so that slide
     // transition never has to wait on the network.
@@ -732,6 +845,17 @@ const TvBoard = {
     if (this.scrollAnimRAF) { cancelAnimationFrame(this.scrollAnimRAF); this.scrollAnimRAF = null; }
   },
 
+  // Bar slide's next page, within the same Plant — the chart itself stays
+  // the active slide (no slide-up transition, this isn't moving to Trend
+  // yet), just redrawn from the same cached rows with the next
+  // TV_BAR_CHUNK_SIZE Lines.
+  advanceBarChunk() {
+    if (!this.scrollModeOn || this.scrollPaused) return;
+    this.barChunkIndex += 1;
+    if (this.currentRows) this.renderBar(this.currentRows, this.currentPlant, this.currentH1);
+    this.armSlideDwell();
+  },
+
   async advanceScrollSlide() {
     if (!this.scrollModeOn) return;
     if (this.scrollSlideIndex < TV_SCROLL_SLIDES.length - 1) {
@@ -759,6 +883,11 @@ const TvBoard = {
     // the same hidden moment the data itself changes — so neither flash can
     // happen: what slides out is the OLD Plant's rank, what slides in is the
     // NEW Plant's bar chart, exactly like a normal Plant advance.
+    // Reset the bar chunk page BEFORE advancePlant() — it calls applyData()
+    // (which draws the new Plant's bar chart) before onDataSwap runs, so
+    // this has to already be 0 by then or the new Plant would start its
+    // sequence mid-way through the old Plant's chunk pages.
+    this.barChunkIndex = 0;
     await this.advancePlant(() => {
       this.scrollSlideIndex = 0;
       Object.entries(this.els.scrollSlideEls).forEach(([key, el]) => {
@@ -1012,12 +1141,26 @@ const TvBoard = {
     });
 
     // only lines that actually have H-1 data, in Plant's natural Line order
-    const activeLines = lines.filter((l) => perLine.has(l));
+    const allActiveLines = lines.filter((l) => perLine.has(l));
 
-    this.els.emptyBar.hidden = activeLines.length > 0;
-    if (!activeLines.length) {
+    this.els.emptyBar.hidden = allActiveLines.length > 0;
+    if (!allActiveLines.length) {
       if (this.chart) { this.chart.destroy(); this.chart = null; }
+      this.barChunkCount = 1;
       return;
+    }
+
+    // Mode Scroll only, and only once there are more Lines than fit on one
+    // page — see TV_BAR_CHUNK_SIZE.
+    const { activeLines, chunkCount } = tvChunkActiveLines(allActiveLines);
+    this.barChunkCount = chunkCount;
+    // Reuse the same suffix span the Mode Sub Dept label uses (this branch
+    // is never subdept, so there's no clash) to show which page is up —
+    // Sub Dept plants never have more than 5 Lines, so this never fires
+    // there anyway.
+    if (chunkCount > 1) {
+      const pageNum = Math.min(this.barChunkIndex, chunkCount - 1) + 1;
+      this.els.barSubdeptSuffix.textContent = ` — Hal ${pageNum}/${chunkCount}`;
     }
 
     const totals = activeLines.map((l) => perLine.get(l).total);
@@ -1092,18 +1235,22 @@ const TvBoard = {
                   // Mode Scroll: the Line name is now the only tick label
                   // (Total moved to the big canvas-drawn text above the
                   // bars), so it can afford to be large and easy to read
-                  // from across the room.
-                  return { size: Math.round(Math.max(48, Math.min(80, h / 9))), weight: '800' };
+                  // from across the room. (Kept modest — pushing this past
+                  // ~40px feeds back into Chart.js's own layout: a taller
+                  // tick-label row squeezes the plotting area shorter,
+                  // which crowds/overlaps the Total text and per-bar value
+                  // labels drawn above the bars.)
+                  return { size: Math.round(Math.max(24, Math.min(40, h / 18))), weight: '800' };
                 }
                 return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
               color: '#3a0510',
               callback: function (value, index) {
-                if (TvBoard.scrollModeOn) return activeLines[index];
+                if (TvBoard.scrollModeOn) return tvShortLineLabel(activeLines[index]);
                 const perCategoryWidth = this.chart.width / activeLines.length;
-                if (perCategoryWidth < 110) return activeLines[index];
+                if (perCategoryWidth < 110) return tvShortLineLabel(activeLines[index]);
                 const total = totals[index];
-                return [activeLines[index], `Total: ${formatNumberID(total, 1)} Kg`];
+                return [tvShortLineLabel(activeLines[index]), `Total: ${formatNumberID(total, 1)} Kg`];
               }
             }
           },
@@ -1144,12 +1291,19 @@ const TvBoard = {
       e.total += Number(r.reject) || 0;
     });
 
-    const activeLines = lines.filter((l) => perLine.has(l));
-    this.els.emptyBar.hidden = activeLines.length > 0;
-    if (!activeLines.length) {
+    const allActiveLines = lines.filter((l) => perLine.has(l));
+    this.els.emptyBar.hidden = allActiveLines.length > 0;
+    if (!allActiveLines.length) {
       if (this.chart) { this.chart.destroy(); this.chart = null; }
+      this.barChunkCount = 1;
       return;
     }
+
+    // Sub Dept plants (1112/1113) only ever have 5 Lines, so this never
+    // actually chunks today — kept for symmetry with renderBar() so
+    // armSlideDwell() doesn't need to know which branch rendered.
+    const { activeLines, chunkCount } = tvChunkActiveLines(allActiveLines);
+    this.barChunkCount = chunkCount;
 
     const totals = activeLines.map((l) => perLine.get(l).total);
     const shiftColorsSolid = { 1: '#d8b370', 2: '#c81e3a', 3: '#55091a' };
@@ -1206,19 +1360,24 @@ const TvBoard = {
               font: (ctx) => {
                 const h = (ctx.chart.chartArea && ctx.chart.chartArea.height) || 300;
                 if (TvBoard.scrollModeOn) {
-                  return { size: Math.round(Math.max(48, Math.min(80, h / 9))), weight: '800' };
+                  // Same reasoning as renderBar's x-tick font: keep this
+                  // capped modestly, since a too-tall tick-label row
+                  // squeezes Chart.js's own plotting area shorter and
+                  // causes the Total/value-label text drawn above the bars
+                  // to overlap or get cut off.
+                  return { size: Math.round(Math.max(24, Math.min(40, h / 18))), weight: '800' };
                 }
                 return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
               color: '#3a0510',
               callback: function (value, index) {
-                if (TvBoard.scrollModeOn) return activeLines[index];
+                if (TvBoard.scrollModeOn) return tvShortLineLabel(activeLines[index]);
                 // 6 bars per Line needs more room per category before the
                 // 2-line label still fits than the normal 3-bar view does.
                 const perCategoryWidth = this.chart.width / activeLines.length;
-                if (perCategoryWidth < 170) return activeLines[index];
+                if (perCategoryWidth < 170) return tvShortLineLabel(activeLines[index]);
                 const total = totals[index];
-                return [activeLines[index], `Total: ${formatNumberID(total, 1)} Kg`];
+                return [tvShortLineLabel(activeLines[index]), `Total: ${formatNumberID(total, 1)} Kg`];
               }
             }
           },
@@ -1459,7 +1618,11 @@ const TvBoard = {
               // label (tvTrendValueLabelsPlugin below) has room to sit
               // above the line instead of getting clipped against the top
               // of the chart or crossed out by the dashed Max reference.
-              y: { display: false, suggestedMax: entry.max * 1.3 }
+              // Bumped from 1.3 -> 1.5: a label that collides with its
+              // neighbor now stacks a level higher instead of overlapping
+              // it, which needs a bit more headroom to actually clear the
+              // top of the card instead of getting clipped there.
+              y: { display: false, suggestedMax: entry.max * 1.5 }
             }
           },
           plugins: [tvTrendValueLabelsPlugin(entry.pctValues)]
@@ -1565,11 +1728,12 @@ const TvBoard = {
                   }
                 }
               },
-              // Extra headroom (1.5x vs the normal view's 1.3x) — this chart
-              // stacks a Proses label above AND a Packing label below each
-              // pair of points (see tvTrendValueLabelsDualPlugin), so it
-              // needs more vertical room than a single-line label does.
-              y: { display: false, suggestedMax: maxVal * 1.5 }
+              // Extra headroom vs the normal view — this chart stacks a
+              // Proses label above AND a Packing label below each pair of
+              // points (see tvTrendValueLabelsDualPlugin), and either one
+              // can now also stack further on a collision, so it needs more
+              // vertical room than a single-line label does.
+              y: { display: false, suggestedMax: maxVal * 1.7 }
             }
           },
           plugins: [tvTrendValueLabelsDualPlugin()]
