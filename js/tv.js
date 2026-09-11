@@ -136,7 +136,7 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
       const valueFontPx = isScroll
         ? Math.round(Math.max(20, Math.min(38, areaH / 24)))
         : Math.round(Math.max(11.5, Math.min(20, areaH / 40)));
-      const tagFontPx = Math.round(Math.max(12, Math.min(18, areaH / 46)));
+      const tagFontPx = Math.round(Math.max(24, Math.min(36, areaH / 23)));
       const tagMinBarHeight = Math.max(22, tagFontPx * 2);
       const totalFontPx = Math.round(Math.max(28, Math.min(46, areaH / 16)));
 
@@ -221,7 +221,7 @@ function tvTrendValueLabelsPlugin(pctValues) {
       // .tv-trend-item-chart in style.css), so a big/high-res TV grows this
       // chart taller and the label font should keep growing right along
       // with it instead of hitting a ceiling too soon.
-      const fontPx = Math.round(Math.max(10, Math.min(32, areaH / 6)));
+      const fontPx = Math.round(Math.max(20, Math.min(64, areaH / 3)));
       const values = chart.data.datasets[0].data;
       const points = meta.data;
       const last = points.length - 1;
@@ -247,6 +247,44 @@ function tvTrendValueLabelsPlugin(pctValues) {
   };
 }
 
+// Mode Sub Dept's version of tvTrendValueLabelsPlugin above — draws a value
+// label for BOTH lines on the chart instead of just one, colored to match
+// each line so they stay identifiable without a legend. Proses (dataset 0)
+// labels sit above its points like the normal single-line view; Packing
+// (dataset 1) labels sit below its points instead of stacking on the same
+// side, which is what the chart's extra headroom (suggestedMax * 1.5 in
+// renderTrendSubDept) is reserved for.
+function tvTrendValueLabelsDualPlugin() {
+  return {
+    id: 'tvTrendValueLabelsDual',
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      const areaH = (chart.chartArea && chart.chartArea.height) || 90;
+      const fontPx = Math.round(Math.max(9, Math.min(26, areaH / 7)));
+      ctx.save();
+      ctx.font = `700 ${fontPx}px "Segoe UI", sans-serif`;
+      chart.data.datasets.forEach((dataset, dsIndex) => {
+        const meta = chart.getDatasetMeta(dsIndex);
+        if (meta.hidden) return;
+        const points = meta.data;
+        const last = points.length - 1;
+        const values = dataset.data;
+        ctx.fillStyle = dataset.borderColor;
+        points.forEach((point, index) => {
+          const value = values[index];
+          if (value === null || value === undefined) return;
+          ctx.textAlign = index === 0 ? 'left' : index === last ? 'right' : 'center';
+          const y = dsIndex === 0
+            ? point.y - Math.max(6, fontPx * 0.55)
+            : point.y + fontPx + Math.max(2, fontPx * 0.25);
+          ctx.fillText(formatNumberID(value, 1), point.x, y);
+        });
+      });
+      ctx.restore();
+    }
+  };
+}
+
 const TvBoard = {
   els: {},
   chart: null,
@@ -263,6 +301,19 @@ const TvBoard = {
   scrollAnimRAF: null,
   loading: false,
   fullscreenBound: false,
+  // Manual toggle — only ever changes anything while the Plant on screen is
+  // 1112/1113 (the two Plants with a Proses/Packing breakdown). Left ON
+  // across Auto-Ganti Plant on purpose: Bos wants it to keep applying every
+  // time the rotation comes back around to 1112/1113, not reset per-Plant.
+  // Other Plants render exactly as before regardless of this flag.
+  subDeptModeOn: false,
+  // Whatever's currently on screen, cached so toggling Mode Sub Dept can
+  // just re-render instantly — the Proses/Packing figures are already part
+  // of the rows already fetched, no need to hit the server again.
+  currentRows: null,
+  currentPlant: null,
+  currentDates: null,
+  currentH1: null,
   // Connection-trouble tracking: how many refreshes in a row have failed,
   // and the shortened retry timer that fires while trouble is ongoing (see
   // handleRefreshFailure/handleRefreshSuccess below).
@@ -295,7 +346,11 @@ const TvBoard = {
       fullscreenBtn: document.getElementById('tv-fullscreen-btn'),
       autorotateBtn: document.getElementById('tv-autorotate-btn'),
       scrollModeBtn: document.getElementById('tv-scrollmode-btn'),
-      scrollPauseBtn: document.getElementById('tv-scrollpause-btn')
+      scrollPauseBtn: document.getElementById('tv-scrollpause-btn'),
+      subdeptModeBtn: document.getElementById('tv-subdeptmode-btn'),
+      barSubdeptSuffix: document.getElementById('tv-bar-subdept-suffix'),
+      rankSubdeptSuffix: document.getElementById('tv-rank-subdept-suffix'),
+      trendSubdeptSuffix: document.getElementById('tv-trend-subdept-suffix')
     };
     // The 3 full-screen "slides" Mode Scroll pages through, found via the
     // canvases/lists already looked up above rather than adding new IDs.
@@ -333,6 +388,7 @@ const TvBoard = {
     this.els.autorotateBtn.addEventListener('click', () => this.toggleAutoRotate());
     this.els.scrollModeBtn.addEventListener('click', () => this.toggleScrollMode());
     this.els.scrollPauseBtn.addEventListener('click', () => this.toggleScrollPause());
+    this.els.subdeptModeBtn.addEventListener('click', () => this.toggleSubDeptMode());
 
     if (!this.fullscreenBound) {
       document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
@@ -341,6 +397,7 @@ const TvBoard = {
 
     this.updateAutoRotateBtn();
     this.updateScrollModeBtn();
+    this.updateSubDeptModeBtn();
   },
 
   start() {
@@ -409,6 +466,30 @@ const TvBoard = {
   updateAutoRotateBtn() {
     this.els.autorotateBtn.textContent = this.autoRotateOn ? '⏸ Auto-Ganti: Aktif' : '🔄 Auto-Ganti Plant';
     this.els.autorotateBtn.classList.toggle('active', this.autoRotateOn);
+  },
+
+  // ---------- Mode Sub Dept ----------
+  // Independent of Mode Scroll/Auto-Ganti Plant — this just decides HOW the
+  // bar/trend/rank panels render for whichever Plant is currently on
+  // screen. Only Plant 1112/1113 actually have a Proses/Packing breakdown
+  // to show, so renderBar()/renderTrendAndRank() fall back to their normal
+  // rendering for every other Plant no matter what this flag is — toggling
+  // it is safe to leave on across the whole Auto-Ganti rotation.
+  toggleSubDeptMode() {
+    this.subDeptModeOn = !this.subDeptModeOn;
+    this.updateSubDeptModeBtn();
+    // Re-render whatever's already on screen from the cached rows — no need
+    // to hit the server again, Proses/Packing are already part of the same
+    // fetched rows the normal view uses.
+    if (this.currentRows) {
+      this.renderBar(this.currentRows, this.currentPlant, this.currentH1);
+      this.renderTrendAndRank(this.currentRows, this.currentPlant, this.currentDates);
+    }
+  },
+
+  updateSubDeptModeBtn() {
+    this.els.subdeptModeBtn.textContent = this.subDeptModeOn ? '🧩 Mode Sub Dept: Aktif' : '🧩 Mode Sub Dept';
+    this.els.subdeptModeBtn.classList.toggle('active', this.subDeptModeOn);
   },
 
   // ---------- Mode Scroll ----------
@@ -779,6 +860,12 @@ const TvBoard = {
   // Pushes fetched data onto the screen — shared by refresh() and by the
   // auto-cycle slide once the next Plant's (prefetched) data is in hand.
   applyData(plant, rows, dates, h1) {
+    // Cached so toggleSubDeptMode() can re-render instantly without a fresh
+    // fetch — see its comment above.
+    this.currentRows = rows;
+    this.currentPlant = plant;
+    this.currentDates = dates;
+    this.currentH1 = h1;
     this.els.dateH1.textContent = formatShortDate(h1);
     this.els.barPlantLabel.textContent = plant;
     this.els.trendPlantLabel.textContent = plant;
@@ -900,6 +987,12 @@ const TvBoard = {
   },
 
   renderBar(rows, plant, h1) {
+    const subdept = this.subDeptModeOn && plantHasSubDept(plant);
+    this.els.barSubdeptSuffix.textContent = subdept ? ' (Proses/Packing)' : '';
+    if (subdept) {
+      this.renderBarSubDept(rows, plant, h1);
+      return;
+    }
     const lines = PLANT_CONFIG[plant] || [];
     const perLine = new Map();
     rows.forEach((r) => {
@@ -994,7 +1087,7 @@ const TvBoard = {
                   // (Total moved to the big canvas-drawn text above the
                   // bars), so it can afford to be large and easy to read
                   // from across the room.
-                  return { size: Math.round(Math.max(24, Math.min(40, h / 18))), weight: '800' };
+                  return { size: Math.round(Math.max(48, Math.min(80, h / 9))), weight: '800' };
                 }
                 return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
@@ -1015,7 +1108,129 @@ const TvBoard = {
     });
   },
 
+  // Mode Sub Dept's bar chart (Plant 1112/1113 only): instead of 3 bars per
+  // Line (one per Shift, each the Shift's combined Total), this draws 6 —
+  // Shift 1/2/3 each split into its own Proses and Packing bar, grouped so
+  // a Shift's pair sits next to each other (S1-Proses, S1-Packing, S2-...).
+  // Same shift color per pair — Proses gets the normal solid shade, Packing
+  // a lighter tint of that SAME color — so the Shift grouping still reads
+  // the same way at a glance, and the "Ps"/"Pk" tag on each bar (drawn by
+  // the same tvBarDecorationsPlugin the normal view uses) says which is
+  // which regardless. Total/Line-name tick label and the Mode Scroll big
+  // Total text above the bars are unchanged — both still read off the
+  // Total column, same as the normal view.
+  renderBarSubDept(rows, plant, h1) {
+    const lines = PLANT_CONFIG[plant] || [];
+    const perLine = new Map();
+    rows.forEach((r) => {
+      if (r.tanggal !== h1) return;
+      if (!perLine.has(r.line)) {
+        perLine.set(r.line, {
+          1: { proses: 0, packing: 0 }, 2: { proses: 0, packing: 0 }, 3: { proses: 0, packing: 0 }, total: 0
+        });
+      }
+      const e = perLine.get(r.line);
+      const shiftKey = String(r.shift);
+      if (e[shiftKey]) {
+        e[shiftKey].proses += Number(r.rejectProses) || 0;
+        e[shiftKey].packing += Number(r.rejectPackaging) || 0;
+      }
+      e.total += Number(r.reject) || 0;
+    });
+
+    const activeLines = lines.filter((l) => perLine.has(l));
+    this.els.emptyBar.hidden = activeLines.length > 0;
+    if (!activeLines.length) {
+      if (this.chart) { this.chart.destroy(); this.chart = null; }
+      return;
+    }
+
+    const totals = activeLines.map((l) => perLine.get(l).total);
+    const shiftColorsSolid = { 1: '#d8b370', 2: '#c81e3a', 3: '#55091a' };
+    const shiftColorsLight = { 1: '#ecd9b3', 2: '#e58a97', 3: '#a3707c' };
+
+    const datasets = [];
+    const tags = [];
+    ['1', '2', '3'].forEach((shiftKey) => {
+      datasets.push({
+        label: `Shift ${shiftKey} - Proses`,
+        data: activeLines.map((l) => Number((perLine.get(l)[shiftKey].proses || 0).toFixed(3))),
+        backgroundColor: shiftColorsSolid[shiftKey],
+        borderRadius: 4,
+        barPercentage: 1,
+        categoryPercentage: 0.86
+      });
+      tags.push('Ps');
+      datasets.push({
+        label: `Shift ${shiftKey} - Packing`,
+        data: activeLines.map((l) => Number((perLine.get(l)[shiftKey].packing || 0).toFixed(3))),
+        backgroundColor: shiftColorsLight[shiftKey],
+        borderRadius: 4,
+        barPercentage: 1,
+        categoryPercentage: 0.86
+      });
+      tags.push('Pk');
+    });
+
+    if (this.chart) this.chart.destroy();
+    this.chart = new Chart(this.els.barCanvas.getContext('2d'), {
+      type: 'bar',
+      data: { labels: activeLines, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        layout: { padding: { top: 22 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#3a0510',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${formatNumberID(ctx.parsed.y, 2)} Kg` }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: {
+              maxRotation: 0,
+              minRotation: 0,
+              autoSkipPadding: 6,
+              font: (ctx) => {
+                const h = (ctx.chart.chartArea && ctx.chart.chartArea.height) || 300;
+                if (TvBoard.scrollModeOn) {
+                  return { size: Math.round(Math.max(48, Math.min(80, h / 9))), weight: '800' };
+                }
+                return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
+              },
+              color: '#3a0510',
+              callback: function (value, index) {
+                if (TvBoard.scrollModeOn) return activeLines[index];
+                // 6 bars per Line needs more room per category before the
+                // 2-line label still fits than the normal 3-bar view does.
+                const perCategoryWidth = this.chart.width / activeLines.length;
+                if (perCategoryWidth < 170) return activeLines[index];
+                const total = totals[index];
+                return [activeLines[index], `Total: ${formatNumberID(total, 1)} Kg`];
+              }
+            }
+          },
+          y: { display: false }
+        }
+      },
+      plugins: [tvBarDecorationsPlugin(tags, totals)]
+    });
+  },
+
   renderTrendAndRank(rows, plant, dates) {
+    const subdept = this.subDeptModeOn && plantHasSubDept(plant);
+    this.els.rankSubdeptSuffix.textContent = subdept ? ' — Proses/Packing' : '';
+    this.els.trendSubdeptSuffix.textContent = subdept ? ' (Proses/Packing)' : '';
+    if (subdept) {
+      this.renderTrendAndRankSubDept(rows, plant, dates);
+      return;
+    }
     const lines = PLANT_CONFIG[plant] || [];
     const byLine = new Map();
     // Tracks Output alongside Reject, per day — Reject alone was already
@@ -1065,6 +1280,60 @@ const TvBoard = {
 
     this.renderTrend(summary, dates);
     this.renderRank(summary);
+  },
+
+  // Mode Sub Dept's version of the above — same per-Line/per-day tracking,
+  // just Proses and Packing kept as two separate series (plus Output, for
+  // completeness/future use) instead of one combined Reject series. Feeds
+  // renderTrendSubDept() (2 lines per mini-chart) and renderRankSubDept()
+  // (2 independent Top Rank lists) below.
+  renderTrendAndRankSubDept(rows, plant, dates) {
+    const lines = PLANT_CONFIG[plant] || [];
+    const byLine = new Map();
+    lines.forEach((l) => byLine.set(l, {
+      proses: new Map(dates.map((d) => [d, 0])),
+      packing: new Map(dates.map((d) => [d, 0]))
+    }));
+
+    rows.forEach((r) => {
+      const entry = byLine.get(r.line);
+      if (!entry || !entry.proses.has(r.tanggal)) return;
+      entry.proses.set(r.tanggal, entry.proses.get(r.tanggal) + (Number(r.rejectProses) || 0));
+      entry.packing.set(r.tanggal, entry.packing.get(r.tanggal) + (Number(r.rejectPackaging) || 0));
+    });
+
+    const summary = [];
+    byLine.forEach(({ proses: prosesByDay, packing: packingByDay }, line) => {
+      const prosesValues = dates.map((d) => Number(prosesByDay.get(d).toFixed(3)));
+      const packingValues = dates.map((d) => Number(packingByDay.get(d).toFixed(3)));
+      const prosesTotal = Number(prosesValues.reduce((a, b) => a + b, 0).toFixed(3));
+      const packingTotal = Number(packingValues.reduce((a, b) => a + b, 0).toFixed(3));
+      if (prosesTotal <= 0 && packingTotal <= 0) return;
+
+      // Each Sub Dept gets its own "days with data" divisor, same reasoning
+      // as the normal view's average — a Line that only had Packing reject
+      // on 2 of 7 days gets its Packing average from those 2 days, not
+      // diluted by days that had none.
+      const prosesActiveDays = prosesValues.filter((v) => v > 0);
+      const packingActiveDays = packingValues.filter((v) => v > 0);
+      const prosesDaysWithData = prosesActiveDays.length || 1;
+      const packingDaysWithData = packingActiveDays.length || 1;
+
+      summary.push({
+        line,
+        prosesValues,
+        packingValues,
+        prosesTotal,
+        packingTotal,
+        prosesAvg: prosesTotal / prosesDaysWithData,
+        packingAvg: packingTotal / packingDaysWithData,
+        prosesDaysWithData,
+        packingDaysWithData
+      });
+    });
+
+    this.renderTrendSubDept(summary, dates);
+    this.renderRankSubDept(summary);
   },
 
   renderTrend(summary, dates) {
@@ -1193,6 +1462,116 @@ const TvBoard = {
       });
   },
 
+  // Mode Sub Dept's version: same card layout, but each mini-chart draws
+  // TWO lines (Proses/Packing) instead of one Total line — the dashed
+  // Max/Rata-rata reference lines are dropped here since those referred to
+  // a single combined metric that no longer exists in this view. The card
+  // head's "Total: X Kg" becomes two color-matched totals instead (styled
+  // in css/style.css), so it's still obvious which line is which without a
+  // separate legend eating into the TV screen.
+  renderTrendSubDept(summary, dates) {
+    this.els.emptyTrend.hidden = summary.length > 0;
+    this.trendCharts.forEach((c) => c.destroy());
+    this.trendCharts = [];
+    this.els.trendGrid.innerHTML = '';
+    if (!summary.length) return;
+
+    const labels = dates.map((d) => formatShortDate(d));
+
+    summary
+      .slice()
+      .sort((a, b) => a.line.localeCompare(b.line))
+      .forEach((entry) => {
+        const card = document.createElement('div');
+        card.className = 'tv-trend-item';
+        card.innerHTML = `
+          <div class="tv-trend-item-head">
+            <span class="tv-trend-item-line">${escapeHtml(entry.line)}</span>
+            <span class="tv-trend-item-total tv-trend-item-total-subdept">
+              <b class="tv-subdept-proses-tag">Proses ${formatNumberID(entry.prosesTotal, 1)} Kg</b>
+              <b class="tv-subdept-packing-tag">Packing ${formatNumberID(entry.packingTotal, 1)} Kg</b>
+            </span>
+          </div>
+          <div class="tv-trend-item-body">
+            <div class="tv-trend-item-chart"><canvas></canvas></div>
+            <div class="tv-trend-item-stats">
+              <span>Proses Avg <b>${formatNumberID(entry.prosesAvg, 1)}</b></span>
+              <span>Packing Avg <b>${formatNumberID(entry.packingAvg, 1)}</b></span>
+            </div>
+          </div>
+        `;
+        this.els.trendGrid.appendChild(card);
+
+        const canvas = card.querySelector('canvas');
+        const maxVal = Math.max(...entry.prosesValues, ...entry.packingValues, 0.001);
+
+        const chart = new Chart(canvas.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Proses',
+                data: entry.prosesValues,
+                borderColor: '#9c1029',
+                backgroundColor: 'rgba(200,30,58,0.10)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 2.5,
+                pointBackgroundColor: '#9c1029',
+                borderWidth: 2
+              },
+              {
+                label: 'Packing',
+                data: entry.packingValues,
+                borderColor: '#1b6fa8',
+                backgroundColor: 'rgba(27,111,168,0.10)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 2.5,
+                pointBackgroundColor: '#1b6fa8',
+                borderWidth: 2
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#3a0510',
+                padding: 8,
+                cornerRadius: 8,
+                callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${formatNumberID(ctx.parsed.y, 2)} Kg` }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: {
+                  maxRotation: 0,
+                  minRotation: 0,
+                  font: (ctx) => {
+                    const h = (ctx.chart.chartArea && ctx.chart.chartArea.height) || 60;
+                    return { size: Math.round(Math.max(9.5, Math.min(20, h / 8))) };
+                  }
+                }
+              },
+              // Extra headroom (1.5x vs the normal view's 1.3x) — this chart
+              // stacks a Proses label above AND a Packing label below each
+              // pair of points (see tvTrendValueLabelsDualPlugin), so it
+              // needs more vertical room than a single-line label does.
+              y: { display: false, suggestedMax: maxVal * 1.5 }
+            }
+          },
+          plugins: [tvTrendValueLabelsDualPlugin()]
+        });
+        this.trendCharts.push(chart);
+      });
+  },
+
   renderRank(summary) {
     this.els.emptyRank.hidden = summary.length > 0;
     this.els.rankList.innerHTML = '';
@@ -1217,5 +1596,52 @@ const TvBoard = {
       `;
       this.els.rankList.appendChild(row);
     });
+  },
+
+  // Mode Sub Dept's version: instead of one combined Top Rank list, two
+  // independent ones side by side — Top Proses on the left, Top Packing on
+  // the right — each ranked by that Sub Dept's own average, reusing the
+  // exact same row markup/classes as the normal view (medal colors, avg
+  // value styling, etc. all still apply).
+  renderRankSubDept(summary) {
+    this.els.emptyRank.hidden = summary.length > 0;
+    this.els.rankList.innerHTML = '';
+    if (!summary.length) return;
+
+    const medalClass = ['tv-rank-1', 'tv-rank-2', 'tv-rank-3'];
+    const buildCol = (title, ranked, avgKey, totalKey, daysKey) => {
+      const col = document.createElement('div');
+      col.className = 'tv-rank-col';
+      const head = document.createElement('div');
+      head.className = 'tv-rank-col-title';
+      head.textContent = title;
+      col.appendChild(head);
+      ranked.forEach((entry, index) => {
+        const row = document.createElement('div');
+        row.className = `tv-rank-row ${medalClass[index] || ''}`;
+        row.innerHTML = `
+          <div class="tv-rank-pos">${index + 1}</div>
+          <div class="tv-rank-info">
+            <div class="tv-rank-line">${escapeHtml(entry.line)}</div>
+            <div class="tv-rank-total">Total 7 hari: ${formatNumberID(entry[totalKey], 1)} Kg (${entry[daysKey]} hari data)</div>
+          </div>
+          <div class="tv-rank-avg">
+            <div class="tv-rank-avg-value">${formatNumberID(entry[avgKey], 1)}</div>
+            <div class="tv-rank-avg-label">Kg/hari</div>
+          </div>
+        `;
+        col.appendChild(row);
+      });
+      return col;
+    };
+
+    const prosesRanked = summary.slice().sort((a, b) => b.prosesAvg - a.prosesAvg).slice(0, TV_TOP_RANK_COUNT);
+    const packingRanked = summary.slice().sort((a, b) => b.packingAvg - a.packingAvg).slice(0, TV_TOP_RANK_COUNT);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'tv-rank-subdept-split';
+    wrap.appendChild(buildCol('Reject Proses', prosesRanked, 'prosesAvg', 'prosesTotal', 'prosesDaysWithData'));
+    wrap.appendChild(buildCol('Reject Packing', packingRanked, 'packingAvg', 'packingTotal', 'packingDaysWithData'));
+    this.els.rankList.appendChild(wrap);
   }
 };
