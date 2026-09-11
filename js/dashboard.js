@@ -157,6 +157,43 @@ function aggregateBySubDept(rows, subDeptFilter) {
   return all.filter((e) => subDeptFilter.indexOf(e.subdept) !== -1);
 }
 
+// Same Plant 1112/1113-only scope as aggregateBySubDept above, but also
+// splits each Sub Dept's reject by Shift 1/2/3 — feeds the exact same
+// renderBarChart() the Per Line/Per Plant "Detail per Shift" view uses (it
+// already knows how to draw a per-category Shift breakdown from `.shift`,
+// generic over whatever `labelKey` names the category), so Sub Dept gets
+// the same Shift-detail chart for free instead of a separate renderer.
+// Categories here are Proses/Packing instead of Line/Plant — mirrors the TV
+// board's Mode Sub Dept bar chart (S1/S2/S3 x Proses/Packing), just
+// aggregated across all of 1112/1113's Lines into 2 categories instead of
+// one category per Line.
+function aggregateSubDeptByShift(rows, subDeptFilter) {
+  const relevant = rows.filter((r) => plantHasSubDept(r.plant));
+  const makeEntry = (subdept, label) => ({ subdept, label, output: 0, reject: 0, shift: { '1': 0, '2': 0, '3': 0 } });
+  const proses = makeEntry('Proses', 'Reject Proses');
+  const packing = makeEntry('Packing', 'Reject Packing');
+
+  relevant.forEach((r) => {
+    const shiftKey = String(r.shift);
+    const out = Number(r.output) || 0;
+    const p = Number(r.rejectProses) || 0;
+    const k = Number(r.rejectPackaging) || 0;
+    // Both entries add the SAME row's Output — a row's Output is the one
+    // denominator both Proses% and Packing% are computed against (matches
+    // resolveRejectFigures_ on the backend), not a split-in-half output.
+    proses.output += out;
+    packing.output += out;
+    proses.reject += p;
+    packing.reject += k;
+    if (proses.shift[shiftKey] !== undefined) proses.shift[shiftKey] += p;
+    if (packing.shift[shiftKey] !== undefined) packing.shift[shiftKey] += k;
+  });
+
+  const all = [proses, packing];
+  if (!subDeptFilter || !subDeptFilter.length) return all;
+  return all.filter((e) => subDeptFilter.indexOf(e.subdept) !== -1);
+}
+
 function aggregateByDate(rows) {
   const map = new Map();
   rows.forEach((r) => {
@@ -344,11 +381,11 @@ const Dashboard = {
     this.els.barHint.textContent = isSubdept
       ? 'Hanya menghitung baris Plant 1112 dan 1113 (Plant lain diabaikan).'
       : 'Setiap bar adalah total gabungan seluruh Line di Plant tersebut.';
-    // Sub Dept always renders as a simple Total-style bar (no per-shift
-    // breakdown) — hide that toggle row while it's the active mode so it's
-    // never shown controlling a chart mode it has no effect on.
-    this.els.barDetailToggle.hidden = isSubdept;
-    this.els.barShiftToggle.hidden = isSubdept || !this.shiftDetailOn;
+    // Detail per Shift now works for Sub Dept too (S1/S2/S3 split within
+    // each of the Proses/Packing bars) — same toggle row as Per Line/Per
+    // Plant, never hidden just because the grouping is Sub Dept.
+    this.els.barDetailToggle.hidden = false;
+    this.els.barShiftToggle.hidden = !this.shiftDetailOn;
   },
 
   // Re-aggregates from the last fetched rows according to the current
@@ -357,8 +394,19 @@ const Dashboard = {
   // again, the raw rows already have everything, shift breakdown included.
   updateBarChart() {
     if (this.barGroupBy === 'subdept') {
-      const items = aggregateBySubDept(this.lastRows, this.msSubDept.getSelected());
-      this.renderSubDeptBarChart(items);
+      if (this.shiftDetailOn) {
+        // Same generic per-category Shift-breakdown renderer Per Line/Per
+        // Plant already use — categories are just Proses/Packing here.
+        const items = aggregateSubDeptByShift(this.lastRows, this.msSubDept.getSelected());
+        this.renderBarChart(items, 'label');
+      } else {
+        // Total (no Shift breakdown) keeps its own renderer — the one place
+        // Sub Dept differs from Per Line/Per Plant is showing each bar's %
+        // of Output in parentheses, which the generic Total-mode renderer
+        // doesn't do.
+        const items = aggregateBySubDept(this.lastRows, this.msSubDept.getSelected());
+        this.renderSubDeptBarChart(items);
+      }
       return;
     }
     const keyField = this.barGroupBy === 'plant' ? 'plant' : 'line';
