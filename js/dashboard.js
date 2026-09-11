@@ -100,7 +100,7 @@ function aggregateByKeyPerShift(rows, keyField) {
 // one dataset per shift) it also stamps a small S1/S2/S3 tag near the base
 // of each bar, exactly like the TV board's chart does, so the two read as
 // the same visual language.
-function barShiftValueLabelPlugin(shiftTags) {
+function barShiftValueLabelPlugin(shiftTags, pctByIndex) {
   return {
     id: 'barShiftValueLabel',
     afterDatasetsDraw(chart) {
@@ -116,7 +116,13 @@ function barShiftValueLabelPlugin(shiftTags) {
           ctx.textAlign = 'center';
           ctx.fillStyle = '#3a0510';
           ctx.font = '700 11px "Segoe UI", sans-serif';
-          ctx.fillText(formatNumberID(value, 1), bar.x, bar.y - 6);
+          // pctByIndex (Sub Dept bars only) adds "(X%)" of Output next to
+          // the Kg value — same idea as the TV board's Trend point labels.
+          const pct = pctByIndex ? pctByIndex[index] : null;
+          const label = pct != null
+            ? `${formatNumberID(value, 1)} (${formatNumberID(pct, 1)}%)`
+            : formatNumberID(value, 1);
+          ctx.fillText(label, bar.x, bar.y - 6);
           if (shiftTags && barHeight > 22) {
             ctx.fillStyle = dsIndex === 0 ? '#3a0510' : '#ffffff';
             ctx.font = '700 9.5px "Segoe UI", sans-serif';
@@ -127,6 +133,28 @@ function barShiftValueLabelPlugin(shiftTags) {
       });
     }
   };
+}
+
+// Plant 1112/1113 only — groups by Sub Dept (Proses/Packing) instead of by
+// Line/Plant. Rows from every other Plant are ignored even if they're mixed
+// into the same filtered `rows` (Bos: "Chart Sub Dept otomatis abaikan
+// Plant lain"). Output isn't split by Sub Dept, so both percentages are
+// each Sub Dept's reject against the SAME combined Output — mirrors how
+// the backend computes RejectProsesPercent/RejectPackingPercent per row.
+function aggregateBySubDept(rows, subDeptFilter) {
+  const relevant = rows.filter((r) => plantHasSubDept(r.plant));
+  let sumOutput = 0, sumProses = 0, sumPacking = 0;
+  relevant.forEach((r) => {
+    sumOutput += Number(r.output) || 0;
+    sumProses += Number(r.rejectProses) || 0;
+    sumPacking += Number(r.rejectPackaging) || 0;
+  });
+  const all = [
+    { subdept: 'Proses', label: 'Reject Proses', reject: sumProses, output: sumOutput, pct: sumOutput > 0 ? (sumProses / sumOutput) * 100 : 0 },
+    { subdept: 'Packing', label: 'Reject Packing', reject: sumPacking, output: sumOutput, pct: sumOutput > 0 ? (sumPacking / sumOutput) * 100 : 0 }
+  ];
+  if (!subDeptFilter || !subDeptFilter.length) return all;
+  return all.filter((e) => subDeptFilter.indexOf(e.subdept) !== -1);
 }
 
 function aggregateByDate(rows) {
@@ -166,8 +194,11 @@ const Dashboard = {
       barTitle: document.getElementById('chart-bar-title'),
       barHint: document.getElementById('chart-bar-hint'),
       barGroupButtons: Array.from(document.querySelectorAll('#bar-groupby-toggle .seg-btn')),
+      btnGroupSubdept: document.getElementById('btn-group-subdept'),
+      barDetailToggle: document.getElementById('bar-detail-toggle'),
       barDetailButtons: Array.from(document.querySelectorAll('#bar-detail-toggle .seg-btn')),
       barShiftToggle: document.getElementById('bar-shift-toggle'),
+      msSubdeptGroup: document.getElementById('group-ms-subdept'),
       barShiftButtons: Array.from(document.querySelectorAll('#bar-shift-toggle .seg-btn')),
       trendCanvas: document.getElementById('chart-trend'),
       emptyBar: document.getElementById('empty-bar'),
@@ -181,9 +212,7 @@ const Dashboard = {
         if (btn.dataset.group === this.barGroupBy) return;
         this.barGroupBy = btn.dataset.group;
         this.els.barGroupButtons.forEach((b) => b.classList.toggle('active', b === btn));
-        const isPlant = this.barGroupBy === 'plant';
-        this.els.barTitle.textContent = isPlant ? 'Perbandingan Reject per Plant' : 'Perbandingan Reject per Line';
-        this.els.barHint.hidden = !isPlant;
+        this.applyBarGroupModeUI();
         this.updateBarChart();
       });
     });
@@ -216,12 +245,21 @@ const Dashboard = {
 
     this.msPlant = createMultiSelect(document.getElementById('ms-plant'), allPlantOptions());
     this.msLine = createMultiSelect(document.getElementById('ms-line'), allLineOptions());
+    this.msSubDept = createMultiSelect(document.getElementById('ms-subdept'), ['Proses', 'Packing']);
 
     // Line narrows down to the selected Plant(s) — same cascade idea as the
-    // input form.
+    // input form. The Sub Dept filter/chart-mode button only make sense
+    // while 1112 and/or 1113 is (or could be — "Semua Plant" counts) part
+    // of the selection, so their visibility rides along with the same
+    // change event.
     this.msPlant.onChange((selectedPlant) => {
       this.msLine.setOptions(lineOptionsForPlant(selectedPlant));
+      this.updateSubDeptVisibility(selectedPlant);
     });
+    this.msSubDept.onChange(() => {
+      if (this.barGroupBy === 'subdept') this.updateBarChart();
+    });
+    this.updateSubDeptVisibility(this.msPlant.getSelected());
 
     this.els.applyBtn.addEventListener('click', () => this.refresh());
     this.els.resetBtn.addEventListener('click', () => {
@@ -231,6 +269,8 @@ const Dashboard = {
       this.msPlant.setOptions(allPlantOptions());
       this.msLine.reset();
       this.msLine.setOptions(allLineOptions());
+      this.msSubDept.reset();
+      this.updateSubDeptVisibility(this.msPlant.getSelected());
       this.refresh();
     });
   },
@@ -272,11 +312,55 @@ const Dashboard = {
     this.renderTable(byLine);
   },
 
+  // Shows/hides the Sub Dept filter + "Per Sub Dept" grouping button —
+  // relevant only while 1112 and/or 1113 is part of the Plant selection
+  // ("Semua Plant", i.e. nothing selected, counts too since it includes
+  // them). Falls back to Per Line if Sub Dept mode was active and just lost
+  // its relevance (e.g. the user narrowed the Plant filter down to Plants
+  // that aren't 1112/1113).
+  updateSubDeptVisibility(selectedPlant) {
+    const relevant = !selectedPlant.length || selectedPlant.indexOf('1112') !== -1 || selectedPlant.indexOf('1113') !== -1;
+    this.els.msSubdeptGroup.hidden = !relevant;
+    this.els.btnGroupSubdept.hidden = !relevant;
+    if (!relevant && this.msSubDept.getSelected().length) this.msSubDept.reset();
+    if (!relevant && this.barGroupBy === 'subdept') {
+      this.barGroupBy = 'line';
+      this.els.barGroupButtons.forEach((b) => b.classList.toggle('active', b.dataset.group === 'line'));
+      this.applyBarGroupModeUI();
+      this.updateBarChart();
+    }
+  },
+
+  // Title/hint/detail-toggle visibility for whichever comparison-chart
+  // grouping mode is currently active — shared by the group-button click
+  // handler and the Sub-Dept-relevance fallback above.
+  applyBarGroupModeUI() {
+    const isPlant = this.barGroupBy === 'plant';
+    const isSubdept = this.barGroupBy === 'subdept';
+    this.els.barTitle.textContent = isSubdept
+      ? 'Perbandingan Reject per Sub Dept'
+      : (isPlant ? 'Perbandingan Reject per Plant' : 'Perbandingan Reject per Line');
+    this.els.barHint.hidden = !isPlant && !isSubdept;
+    this.els.barHint.textContent = isSubdept
+      ? 'Hanya menghitung baris Plant 1112 dan 1113 (Plant lain diabaikan).'
+      : 'Setiap bar adalah total gabungan seluruh Line di Plant tersebut.';
+    // Sub Dept always renders as a simple Total-style bar (no per-shift
+    // breakdown) — hide that toggle row while it's the active mode so it's
+    // never shown controlling a chart mode it has no effect on.
+    this.els.barDetailToggle.hidden = isSubdept;
+    this.els.barShiftToggle.hidden = isSubdept || !this.shiftDetailOn;
+  },
+
   // Re-aggregates from the last fetched rows according to the current
-  // Per Line / Per Plant toggle (and the Detail per Shift toggle) and
-  // re-renders the comparison chart — no need to hit the server again, the
-  // raw rows already have everything, shift breakdown included.
+  // Per Line / Per Plant / Per Sub Dept toggle (and the Detail per Shift
+  // toggle) and re-renders the comparison chart — no need to hit the server
+  // again, the raw rows already have everything, shift breakdown included.
   updateBarChart() {
+    if (this.barGroupBy === 'subdept') {
+      const items = aggregateBySubDept(this.lastRows, this.msSubDept.getSelected());
+      this.renderSubDeptBarChart(items);
+      return;
+    }
     const keyField = this.barGroupBy === 'plant' ? 'plant' : 'line';
     const items = aggregateByKeyPerShift(this.lastRows, keyField)
       .sort((a, b) => a[keyField].localeCompare(b[keyField]));
@@ -383,6 +467,56 @@ const Dashboard = {
         }
       },
       plugins: [barShiftValueLabelPlugin(shiftTags)]
+    });
+  },
+
+  // Sub Dept mode: a simple two-bar (or one, if the Sub Dept filter narrows
+  // it) Total-style chart — Plant 1112/1113 only, no per-shift breakdown.
+  // Each bar's value label also shows that Sub Dept's reject as a
+  // percentage of combined Output, in parentheses.
+  renderSubDeptBarChart(items) {
+    this.els.emptyBar.hidden = items.length > 0;
+    if (!items.length) {
+      if (this.barChart) { this.barChart.destroy(); this.barChart = null; }
+      return;
+    }
+    const labels = items.map((e) => e.label);
+    const maxReject = Math.max(...items.map((e) => e.reject), 1);
+    const datasets = [{
+      label: 'Total Reject (Kg)',
+      data: items.map((e) => Number(e.reject.toFixed(3))),
+      backgroundColor: items.map((e) => colorForRatio(e.reject / maxReject)),
+      borderRadius: 6,
+      maxBarThickness: 70
+    }];
+    const pctByIndex = items.map((e) => e.pct);
+
+    if (this.barChart) this.barChart.destroy();
+    this.barChart = new Chart(this.els.barCanvas.getContext('2d'), {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 500, easing: 'easeOutQuart' },
+        layout: { padding: { top: 22 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#3a0510',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${formatNumberID(ctx.parsed.y, 2)} Kg (${formatNumberID(pctByIndex[ctx.dataIndex], 2)}%)`
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 0, minRotation: 0, font: { size: 12.5, weight: '700' } } },
+          y: { grid: { color: '#f1e3e5' }, ticks: { callback: (v) => formatNumberID(v, 0) } }
+        }
+      },
+      plugins: [barShiftValueLabelPlugin(null, pctByIndex)]
     });
   },
 
