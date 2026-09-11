@@ -206,7 +206,12 @@ function tvTrendValueLabelsPlugin() {
       if (!meta || meta.hidden) return;
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 90;
-      const fontPx = Math.round(Math.max(10, Math.min(20, areaH / 7)));
+      // Cap raised from 20 to 26 — Mode Scroll's trend chart height now
+      // scales with the viewport (see .tv-trend-item-chart in style.css), so
+      // a big/high-res TV grows this chart taller than before and the old
+      // cap was clipping the value labels' font size right at the point a
+      // bigger screen most needed it to keep growing.
+      const fontPx = Math.round(Math.max(10, Math.min(26, areaH / 7)));
       const values = chart.data.datasets[0].data;
       const points = meta.data;
       const last = points.length - 1;
@@ -1137,7 +1142,11 @@ const TvBoard = {
                   // there even though it's fine in the compact layout.
                   font: (ctx) => {
                     const h = (ctx.chart.chartArea && ctx.chart.chartArea.height) || 60;
-                    return { size: Math.round(Math.max(9.5, Math.min(16, h / 8))) };
+                    // Cap raised from 16 to 20 for the same reason as
+                    // tvTrendValueLabelsPlugin's cap above — this chart can
+                    // now render taller on a big TV, so the old ceiling was
+                    // the thing making the date labels look stuck-small.
+                    return { size: Math.round(Math.max(9.5, Math.min(20, h / 8))) };
                   }
                 }
               },
