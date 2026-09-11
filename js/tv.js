@@ -130,12 +130,15 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 300;
       const isScroll = TvBoard.scrollModeOn;
+      // Caps raised across the board (Bos: still too small on the actual
+      // TV even after the first round of scaling) — Total > Line name >
+      // per-shift value > shift tag stays the same hierarchy, just bigger.
       const valueFontPx = isScroll
-        ? Math.round(Math.max(16, Math.min(28, areaH / 30)))
+        ? Math.round(Math.max(20, Math.min(38, areaH / 24)))
         : Math.round(Math.max(11.5, Math.min(20, areaH / 40)));
-      const tagFontPx = Math.round(Math.max(10, Math.min(15, areaH / 55)));
+      const tagFontPx = Math.round(Math.max(12, Math.min(18, areaH / 46)));
       const tagMinBarHeight = Math.max(22, tagFontPx * 2);
-      const totalFontPx = Math.round(Math.max(22, Math.min(36, areaH / 20)));
+      const totalFontPx = Math.round(Math.max(28, Math.min(46, areaH / 16)));
 
       // Tracks, per category (x-axis index), the topmost pixel any value
       // label reached — so the big Total text (Mode Scroll only) can be
@@ -182,7 +185,10 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
           ctx.textAlign = 'center';
           ctx.fillStyle = '#3a0510';
           ctx.font = `800 ${totalFontPx}px "Segoe UI", sans-serif`;
-          ctx.fillText(`Total: ${formatNumberID(total, 1)} Kg`, x, top - 12);
+          // Just the number + Kg now (no "Total:" prefix) — Bos: it was
+          // eating up space unnecessarily, and the big bold text sitting
+          // above the bars already reads as "the total" without saying so.
+          ctx.fillText(`${formatNumberID(total, 1)} Kg`, x, top - 12);
           ctx.restore();
         });
       }
@@ -198,7 +204,11 @@ function tvBarDecorationsPlugin(shiftLabels, totals) {
 // text above: these cards are much taller in Mode Scroll than in the
 // compact dense layout, and a fixed pixel size would read fine in one and
 // illegibly small (or oversized) in the other.
-function tvTrendValueLabelsPlugin() {
+// `pctValues` (same length/index as the chart's own data — one per day) adds
+// that day's Reject % in parentheses after the Kg value, e.g. "628,0
+// (2,53%)" — null for a day with no Output to divide by (see
+// renderTrendAndRank), which just prints the Kg value alone.
+function tvTrendValueLabelsPlugin(pctValues) {
   return {
     id: 'tvTrendValueLabels',
     afterDatasetsDraw(chart) {
@@ -206,12 +216,12 @@ function tvTrendValueLabelsPlugin() {
       if (!meta || meta.hidden) return;
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 90;
-      // Cap raised from 20 to 26 — Mode Scroll's trend chart height now
-      // scales with the viewport (see .tv-trend-item-chart in style.css), so
-      // a big/high-res TV grows this chart taller than before and the old
-      // cap was clipping the value labels' font size right at the point a
-      // bigger screen most needed it to keep growing.
-      const fontPx = Math.round(Math.max(10, Math.min(26, areaH / 7)));
+      // Cap raised again (Bos: still too small on the actual TV) — Mode
+      // Scroll's trend chart height scales with the viewport (see
+      // .tv-trend-item-chart in style.css), so a big/high-res TV grows this
+      // chart taller and the label font should keep growing right along
+      // with it instead of hitting a ceiling too soon.
+      const fontPx = Math.round(Math.max(10, Math.min(32, areaH / 6)));
       const values = chart.data.datasets[0].data;
       const points = meta.data;
       const last = points.length - 1;
@@ -222,11 +232,15 @@ function tvTrendValueLabelsPlugin() {
       points.forEach((point, index) => {
         const value = values[index];
         if (value === null || value === undefined) return;
+        const pct = pctValues && pctValues[index];
+        const text = pct === null || pct === undefined
+          ? formatNumberID(value, 1)
+          : `${formatNumberID(value, 1)} (${formatNumberID(pct, 1)}%)`;
         // Center-aligned labels on the first/last point spill past the
         // canvas edge, so those two are anchored to their point instead of
         // straddling it.
         ctx.textAlign = index === 0 ? 'left' : index === last ? 'right' : 'center';
-        ctx.fillText(formatNumberID(value, 1), point.x, point.y - Math.max(6, fontPx * 0.55));
+        ctx.fillText(text, point.x, point.y - Math.max(6, fontPx * 0.55));
       });
       ctx.restore();
     }
@@ -980,7 +994,7 @@ const TvBoard = {
                   // (Total moved to the big canvas-drawn text above the
                   // bars), so it can afford to be large and easy to read
                   // from across the room.
-                  return { size: Math.round(Math.max(20, Math.min(32, h / 22))), weight: '800' };
+                  return { size: Math.round(Math.max(24, Math.min(40, h / 18))), weight: '800' };
                 }
                 return { size: Math.round(Math.max(12, Math.min(18, h / 45))), weight: '700' };
               },
@@ -1004,19 +1018,34 @@ const TvBoard = {
   renderTrendAndRank(rows, plant, dates) {
     const lines = PLANT_CONFIG[plant] || [];
     const byLine = new Map();
-    lines.forEach((l) => byLine.set(l, new Map(dates.map((d) => [d, 0]))));
+    // Tracks Output alongside Reject, per day — Reject alone was already
+    // enough for the Kg values plotted on the line, but the trend point
+    // labels also show that day's Reject % now, which needs that day's
+    // Output too (same reject/output*100 the dashboard/backend use
+    // everywhere else — not a separate calculation).
+    lines.forEach((l) => byLine.set(l, {
+      reject: new Map(dates.map((d) => [d, 0])),
+      output: new Map(dates.map((d) => [d, 0]))
+    }));
 
     rows.forEach((r) => {
-      const dayMap = byLine.get(r.line);
-      if (!dayMap || !dayMap.has(r.tanggal)) return;
-      dayMap.set(r.tanggal, dayMap.get(r.tanggal) + (Number(r.reject) || 0));
+      const entry = byLine.get(r.line);
+      if (!entry || !entry.reject.has(r.tanggal)) return;
+      entry.reject.set(r.tanggal, entry.reject.get(r.tanggal) + (Number(r.reject) || 0));
+      entry.output.set(r.tanggal, entry.output.get(r.tanggal) + (Number(r.output) || 0));
     });
 
     const summary = [];
-    byLine.forEach((dayMap, line) => {
-      const values = dates.map((d) => Number(dayMap.get(d).toFixed(3)));
+    byLine.forEach(({ reject: rejectByDay, output: outputByDay }, line) => {
+      const values = dates.map((d) => Number(rejectByDay.get(d).toFixed(3)));
       const total = Number(values.reduce((a, b) => a + b, 0).toFixed(3));
       if (total <= 0) return;
+      // Only meaningful (and only computed) for days that actually have
+      // Output — a day with no data at all would otherwise divide 0/0.
+      const pctValues = dates.map((d, i) => {
+        const out = outputByDay.get(d);
+        return out > 0 ? Number(((values[i] / out) * 100).toFixed(2)) : null;
+      });
       // Average is total divided by however many days actually have reject
       // data, NOT a fixed /7 — a Line that only reported on 2 of the 7 days
       // gets its average from those 2 days, not diluted by 5 empty ones.
@@ -1025,6 +1054,7 @@ const TvBoard = {
       summary.push({
         line,
         values,
+        pctValues,
         total,
         avg: total / daysWithData,
         max: Math.max(...activeDays),
@@ -1157,7 +1187,7 @@ const TvBoard = {
               y: { display: false, suggestedMax: entry.max * 1.3 }
             }
           },
-          plugins: [tvTrendValueLabelsPlugin()]
+          plugins: [tvTrendValueLabelsPlugin(entry.pctValues)]
         });
         this.trendCharts.push(chart);
       });
