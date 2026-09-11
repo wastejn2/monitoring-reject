@@ -216,12 +216,18 @@ function tvTrendValueLabelsPlugin(pctValues) {
       if (!meta || meta.hidden) return;
       const ctx = chart.ctx;
       const areaH = (chart.chartArea && chart.chartArea.height) || 90;
-      // Cap raised again (Bos: still too small on the actual TV) — Mode
-      // Scroll's trend chart height scales with the viewport (see
-      // .tv-trend-item-chart in style.css), so a big/high-res TV grows this
-      // chart taller and the label font should keep growing right along
-      // with it instead of hitting a ceiling too soon.
-      const fontPx = Math.round(Math.max(13, Math.min(42, areaH / 4.6)));
+      // Branches on Mode Scroll explicitly (like the bar chart's
+      // valueFontPx does) rather than scaling off areaH alone — this chart
+      // also gets taller in plain fullscreen (Mode Scroll OFF), but there
+      // the panel is still only 1 of 3 sharing the screen and each point
+      // has little horizontal room, so reusing Mode Scroll's much bigger
+      // cap there made neighboring points' labels overlap into an
+      // unreadable jumble. Non-scroll keeps the original modest range;
+      // Mode Scroll (the whole screen to itself) gets the bigger one Bos
+      // asked for (1.3x the original).
+      const fontPx = TvBoard.scrollModeOn
+        ? Math.round(Math.max(13, Math.min(42, areaH / 4.6)))
+        : Math.round(Math.max(10, Math.min(32, areaH / 6)));
       const values = chart.data.datasets[0].data;
       const points = meta.data;
       const last = points.length - 1;
