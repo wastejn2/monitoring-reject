@@ -221,7 +221,7 @@ function tvTrendValueLabelsPlugin(pctValues) {
       // .tv-trend-item-chart in style.css), so a big/high-res TV grows this
       // chart taller and the label font should keep growing right along
       // with it instead of hitting a ceiling too soon.
-      const fontPx = Math.round(Math.max(20, Math.min(64, areaH / 3)));
+      const fontPx = Math.round(Math.max(13, Math.min(42, areaH / 4.6)));
       const values = chart.data.datasets[0].data;
       const points = meta.data;
       const last = points.length - 1;
