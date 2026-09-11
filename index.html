@@ -177,11 +177,22 @@
             <span>Output Produksi (Kg)</span>
             <input type="number" id="eh-output" step="0.001" min="0" inputmode="decimal" required />
           </label>
-          <label class="field">
+          <label class="field" id="eh-group-reject-total">
             <span>Total Reject (Kg)</span>
             <input type="number" id="eh-reject" step="0.001" min="0" inputmode="decimal" required />
           </label>
         </div>
+        <div class="form-grid two-col" id="eh-group-reject-subdept" hidden>
+          <label class="field">
+            <span>Reject Proses (Kg)</span>
+            <input type="number" id="eh-reject-proses" step="0.001" min="0" inputmode="decimal" />
+          </label>
+          <label class="field">
+            <span>Reject Packing (Kg)</span>
+            <input type="number" id="eh-reject-packing" step="0.001" min="0" inputmode="decimal" />
+          </label>
+        </div>
+        <div class="form-hint-total" id="eh-subdept-total" hidden>Total Reject: <b>0</b> Kg</div>
         <div class="form-message form-error" id="eh-error" hidden></div>
         <div class="form-actions">
           <button type="button" class="btn-ghost" id="btn-eh-cancel">Batal</button>
@@ -281,12 +292,26 @@
                 <input type="number" id="input-output" step="0.001" min="0" inputmode="decimal" placeholder="Contoh: 1000.123" required />
                 <small class="field-hint">Maksimal 3 angka di belakang koma</small>
               </label>
-              <label class="field">
+              <label class="field" id="group-reject-total">
                 <span>Total Reject (Kg)</span>
                 <input type="number" id="input-reject" step="0.001" min="0" inputmode="decimal" placeholder="Contoh: 25.567" required />
                 <small class="field-hint">Maksimal 3 angka di belakang koma</small>
               </label>
             </div>
+
+            <div class="form-grid two-col" id="group-reject-subdept" hidden>
+              <label class="field">
+                <span>Reject Proses (Kg)</span>
+                <input type="number" id="input-reject-proses" step="0.001" min="0" inputmode="decimal" placeholder="Contoh: 15.250" />
+                <small class="field-hint">Maksimal 3 angka di belakang koma</small>
+              </label>
+              <label class="field">
+                <span>Reject Packing (Kg)</span>
+                <input type="number" id="input-reject-packing" step="0.001" min="0" inputmode="decimal" placeholder="Contoh: 10.317" />
+                <small class="field-hint">Maksimal 3 angka di belakang koma</small>
+              </label>
+            </div>
+            <div class="form-hint-total" id="reject-subdept-total" hidden>Total Reject: <b>0</b> Kg</div>
 
             <div class="form-message form-error" id="input-error" hidden></div>
             <div class="form-message form-success" id="input-success" hidden></div>
@@ -323,6 +348,10 @@
               <span>Line</span>
               <div class="multiselect" id="ms-line" data-label="Semua Line"></div>
             </div>
+            <div class="field multiselect-field" id="group-ms-subdept" hidden>
+              <span>Sub Dept</span>
+              <div class="multiselect" id="ms-subdept" data-label="Semua Sub Dept"></div>
+            </div>
 
             <div class="filter-actions">
               <button class="btn-ghost" id="btn-filter-reset">Reset</button>
@@ -358,6 +387,7 @@
               <div class="seg-group" id="bar-groupby-toggle">
                 <button type="button" class="seg-btn active" data-group="line">Per Line</button>
                 <button type="button" class="seg-btn" data-group="plant">Per Plant</button>
+                <button type="button" class="seg-btn" data-group="subdept" id="btn-group-subdept" hidden>Per Sub Dept</button>
               </div>
               <div class="seg-group" id="bar-detail-toggle">
                 <button type="button" class="seg-btn active" data-detail="off">Total</button>
